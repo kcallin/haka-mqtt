@@ -99,13 +99,6 @@ class TestConnectCodec(unittest.TestCase):
 
 
 class TestConnackCodec(unittest.TestCase):
-    def test_codec(self):
-        c = mqtt.MqttConnect('client_id', False, 0)
-        bio = BytesIO()
-
-        num_encoded_bytes = c.encode(bio)
-        self.assertTrue(num_encoded_bytes > 1)
-
-        buf = bytearray(bio.getvalue())
-        num_decoded_bytes = c.decode(buf)
-        self.assertEqual(num_encoded_bytes, num_decoded_bytes)
+    def test_decode(self):
+        buf = bytearray(a2b_hex('20020000'))
+        packet = mqtt.MqttConnack.decode(buf)

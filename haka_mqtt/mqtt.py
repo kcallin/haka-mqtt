@@ -37,7 +37,7 @@ class MqttControlPacketType(IntEnum):
     disconnect = 14
 
 
-def is_valid_flags(packet_type, flags):
+def are_flags_valid(packet_type, flags):
     """
     [MQTT-2.2.2-1]
 
@@ -223,7 +223,7 @@ class MqttFixedHeader(object):
         """
         self.packet_type = packet_type
 
-        assert is_valid_flags(packet_type, flags)
+        assert are_flags_valid(packet_type, flags)
 
         self.flags = flags
         self.remaining_len = remaining_len
@@ -252,7 +252,7 @@ class MqttFixedHeader(object):
             except ValueError:
                 raise DecodeError('Unknown packet type 0x{:02x}.'.format(packet_type_byte))
 
-            if not is_valid_flags(packet_type, flags):
+            if not are_flags_valid(packet_type, flags):
                 raise DecodeError('Invalid flags for packet type.')
         except IndexError:
             raise UnderflowDecodeError()
@@ -355,7 +355,7 @@ class MqttConnect(MqttFixedHeader):
         self.will = will
 
         bio = BytesIO()
-        self.encode_connect_body(bio)
+        self.encode_body(bio)
         num_body_bytes = len(bio.getvalue())
         MqttFixedHeader.__init__(self, MqttControlPacketType.connect, 0, num_body_bytes)
 
@@ -411,7 +411,7 @@ class MqttConnect(MqttFixedHeader):
 
         return 2
 
-    def encode_connect_body(self, f):
+    def encode_body(self, f):
         """
 
         Parameters
@@ -447,7 +447,7 @@ class MqttConnect(MqttFixedHeader):
     def encode(self, f):
         num_bytes_written = 0
         num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_connect_body(f)
+        num_bytes_written += self.encode_body(f)
 
         return num_bytes_written
 
@@ -469,7 +469,7 @@ class MqttConnack(MqttFixedHeader):
         self.return_code = return_code
 
         bio = BytesIO()
-        self.encode_connect_body(bio)
+        self.encode_body(bio)
         num_body_bytes = len(bio.getvalue())
         MqttFixedHeader.__init__(self, MqttControlPacketType.connack, 0, num_body_bytes)
 
@@ -506,4 +506,56 @@ class MqttConnack(MqttFixedHeader):
 
         return 1
 
+    @staticmethod
+    def decode_body(buf):
+        num_bytes_consumed = 2
+        if len(buf) < num_bytes_consumed:
+            raise UnderflowDecodeError()
+
+        if buf[0] == 0:
+            session_present = 0
+        elif buf[0] == 1:
+            session_present = 1
+        else:
+            raise DecodeError('Incorrectly encoded session_present flag.')
+
+        return_code = buf[1]
+        # 0 - conn accepted
+        # 1 - conn refused, unnacceptable protocol version
+        # 2 - conn refused, identifier rejected
+        # 3 - conn refused server unavailable
+        # 4 - conn refused bad user name or password
+        # 5 - conn refused not authorized.
+        if 0 <= return_code <= 5:
+            return num_bytes_consumed, MqttConnack(session_present, return_code)
+        else:
+            raise DecodeError("Unrecognized return code.")
+
+
+    @staticmethod
+    def decode(buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        (num_bytes_consumed: int, MqttFixedHeader)
+
+        """
+
+        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
+        if hdr.packet_type != MqttControlPacketType.connack:
+            raise DecodeError('Expected connack packet.')
+
+        num_body_bytes_consumed, connack = MqttConnack.decode_body(buf[num_header_bytes_consumed:])
+        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
+
+        return num_bytes_consumed, connack
+
+    def __repr__(self):
+        msg = 'MqttConnack(session_present=%s, return_code=%s)'
+        return msg.format(self.session_present, self.return_code)
 

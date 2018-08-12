@@ -146,7 +146,7 @@ def decode_utf8(buf):
     try:
         decode = codecs.getdecoder('utf8')
 
-        num_string_bytes = (ord(buf[0]) << 8) + ord(buf[1])
+        num_string_bytes = (buf[0] << 8) + buf[1]
         num_bytes_consumed = 2 + num_string_bytes
         s, num_chars = decode(buf[2:num_bytes_consumed])
 
@@ -335,6 +335,9 @@ class MqttPublishHeader(MqttFixedHeader):
 
 
 class MqttConnect(MqttFixedHeader):
+    CONNECT_HEADER = b'\x00\x04MQTT'
+    PROTOCOL_LEVEL = b'\x04'
+
     def __init__(self, client_id, clean_session, keep_alive, username=None, password=None, will=None):
         """
 
@@ -361,22 +364,12 @@ class MqttConnect(MqttFixedHeader):
 
     @staticmethod
     def __encode_name(f):
-        buf = 6*[0]
-        buf[0] = 0
-        buf[1] = 4
-        buf[2] = ord('M')
-        buf[3] = ord('Q')
-        buf[4] = ord('T')
-        buf[5] = ord('T')
-
-        for b in buf:
-            f.write(chr(b))
-
-        return 6
+        f.write(MqttConnect.CONNECT_HEADER)
+        return len(MqttConnect.CONNECT_HEADER)
 
     @staticmethod
     def __encode_protocol_level(f):
-        f.write('\x04')
+        f.write(MqttConnect.PROTOCOL_LEVEL)
 
         return 1
 
@@ -396,7 +389,7 @@ class MqttConnect(MqttFixedHeader):
                 flags = flags | 0x20
 
             if self.will.qos:
-                flags = flags | (self.will.qos << 4)
+                flags = flags | (self.will.qos << 3)
 
         if self.clean_session:
             flags = flags | 0x02
@@ -450,6 +443,140 @@ class MqttConnect(MqttFixedHeader):
         num_bytes_written += self.encode_body(f)
 
         return num_bytes_written
+
+    @staticmethod
+    def decode_body(buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        num_bytes_consumed = 0
+        l = len(MqttConnect.CONNECT_HEADER)
+        if buf[0:l] != MqttConnect.CONNECT_HEADER:
+            raise DecodeError()
+        buf = buf[l:]
+        num_bytes_consumed += l
+
+        protocol_level = chr(buf[0])
+        if protocol_level != MqttConnect.PROTOCOL_LEVEL:
+            raise DecodeError('Invalid protocol level {}.'.format(protocol_level))
+        buf = buf[1:]
+        num_bytes_consumed += 1
+
+        flags = buf[0]
+        has_username = bool(flags & 0x80)
+        has_password = bool(flags & 0x40)
+        has_will = bool(flags & 0x04)
+        will_retained = bool(flags & 0x20)
+        will_qos = (flags & 0x18) >> 3
+        clean_session = bool(flags & 0x02)
+        zero = flags & 0x01
+
+        if zero != 0:
+            raise DecodeError()
+        buf = buf[1:]
+        num_bytes_consumed += 1
+
+        keep_alive = (buf[0] << 8) + buf[1]
+        buf = buf[2:]
+        num_bytes_consumed += 2
+
+        num_bytes_consumed, buf, client_id = decode_utf8_buf(num_bytes_consumed, buf)
+
+        if has_will:
+            num_bytes_consumed, buf, will_topic = decode_utf8_buf(num_bytes_consumed, buf)
+            num_bytes_consumed, buf, will_message = decode_bytes_buf(num_bytes_consumed, buf)
+            will = MqttWill(will_qos, will_topic, will_message, will_retained)
+        else:
+            if will_qos != 0:
+                # [MQTT-3.1.2-13]
+                raise DecodeError('Expected will_qos to be zero since will flag is zero.')
+
+            will = None
+
+        if has_username:
+            num_bytes_consumed, buf, username = decode_utf8_buf(num_bytes_consumed, buf)
+        else:
+            username = None
+
+        if has_password:
+            num_bytes_consumed, buf, password = decode_utf8_buf(num_bytes_consumed, buf)
+        else:
+            password = None
+
+        connect = MqttConnect(client_id, clean_session, keep_alive, username, password, will)
+        return num_bytes_consumed, connect
+
+    @staticmethod
+    def decode(buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        (num_bytes_consumed: int, MqttFixedHeader)
+
+        """
+
+        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
+        if hdr.packet_type != MqttControlPacketType.connect:
+            raise DecodeError('Expected connack packet.')
+
+        num_body_bytes_consumed, connect = MqttConnect.decode_body(buf[num_header_bytes_consumed:])
+        if hdr.remaining_len != num_body_bytes_consumed:
+            raise DecodeError('Header remaining length not equal to body bytes.')
+        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
+
+        return num_bytes_consumed, connect
+
+
+def decode_utf8_buf(num_bytes_consumed, buf):
+    """
+
+    Parameters
+    ----------
+    buf
+
+    Returns
+    -------
+    (num_bytes_consumed, new_buf, utf8_str)
+    """
+    num_str_bytes, s = decode_utf8(buf)
+
+    buf = buf[num_str_bytes:]
+    num_bytes_consumed += num_str_bytes
+
+    return (num_bytes_consumed, buf, s)
+
+
+def decode_bytes_buf(num_bytes_consumed, buf):
+    """
+
+    Parameters
+    ----------
+    buf
+
+    Returns
+    -------
+    (num_bytes_consumed, new_buf, utf8_str)
+    """
+    num_str_bytes, s = decode_bytes(buf)
+
+    buf = buf[num_str_bytes:]
+    num_bytes_consumed += num_str_bytes
+
+    return (num_bytes_consumed, buf, s)
 
 
 class MqttConnack(MqttFixedHeader):
@@ -530,7 +657,6 @@ class MqttConnack(MqttFixedHeader):
             return num_bytes_consumed, MqttConnack(session_present, return_code)
         else:
             raise DecodeError("Unrecognized return code.")
-
 
     @staticmethod
     def decode(buf):

@@ -75,7 +75,7 @@ class TestCodecVarInt(unittest.TestCase):
 class TestUtf8Decode(unittest.TestCase):
     def test_decode_encode(self):
         buf = a2b_hex('000541f0aa9b94')
-        num_bytes_consumed, s = mqtt.decode_utf8(buf)
+        num_bytes_consumed, s = mqtt.decode_utf8(bytearray(buf))
         self.assertEqual(u'A\U0002a6d4', s)
         self.assertEqual(len(buf), num_bytes_consumed)
 
@@ -94,7 +94,7 @@ class TestConnectCodec(unittest.TestCase):
         self.assertTrue(num_encoded_bytes > 1)
 
         buf = bytearray(bio.getvalue())
-        num_decoded_bytes = c.decode(buf)
+        num_decoded_bytes, actual = mqtt.MqttConnect.decode(buf)
         self.assertEqual(num_encoded_bytes, num_decoded_bytes)
 
 

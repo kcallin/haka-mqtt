@@ -1,6 +1,7 @@
 import codecs
 from io import BytesIO
-
+from struct import pack
+from struct import Struct
 from enum import IntEnum
 
 
@@ -685,3 +686,179 @@ class MqttConnack(MqttFixedHeader):
         msg = 'MqttConnack(session_present=%s, return_code=%s)'
         return msg.format(self.session_present, self.return_code)
 
+
+class SubscribeTopic(object):
+    def __init__(self, name, max_qos):
+        """
+
+        Parameters
+        ----------
+        name: str
+        max_qos: int
+
+        """
+        if not 0 <= max_qos <= 2:
+            raise ValueError('Invalid QOS.')
+
+        self.name = name
+        self.max_qos = max_qos
+
+
+FIELD_U8 = Struct('>B')
+FIELD_U16 = Struct('>H')
+FIELD_PACKET_ID = FIELD_U16
+
+def write_u16(i, file):
+    file.write(FIELD_PACKET_ID.pack(i))
+    return 2
+
+
+class CursorBuf():
+    def __init__(self, buf):
+        self.buf = buf
+        self.view = buf
+        self.num_bytes_consumed = 0
+
+    def unpack(self, struct):
+        """
+
+        Parameters
+        ----------
+        struct: struct.Struct
+
+        Returns
+        -------
+        int
+            Number of bytes consumed.
+        """
+        v = struct.unpack(self.view[0:struct.size])
+        self.num_bytes_consumed += struct.size
+        self.view = self.view[struct.size:]
+        return v
+
+    def unpack_utf8(self):
+        """
+
+        Returns
+        -------
+        int, str
+            Number of bytes consumed, string
+        """
+        num_bytes_consumed, s = decode_utf8(self.view)
+
+        self.num_bytes_consumed += num_bytes_consumed
+        self.view = self.view[num_bytes_consumed:]
+
+        return num_bytes_consumed, s
+
+
+class MqttSubscribe(MqttFixedHeader):
+    CONNECT_HEADER = b'\x00\x04MQTT'
+    PROTOCOL_LEVEL = b'\x04'
+
+    def __init__(self, packet_id, topics):
+        """
+
+        Parameters
+        ----------
+        packet_id: int
+            0 <= packet_id <= 2**16-1
+        topics: iterable of SubscribeTopic
+        """
+        self.packet_id = packet_id
+        self.topics = tuple(topics)
+
+        if isinstance(topics, (str, unicode, bytes)):
+            raise TypeError()
+
+        assert len(topics) >= 1  # MQTT 3.8.3-3
+        flags = 2 # MQTT 3.8.1-1
+        bio = BytesIO()
+        self.encode_body(bio)
+        num_body_bytes = len(bio.getvalue())
+        MqttFixedHeader.__init__(self, MqttControlPacketType.subscribe, flags, num_body_bytes)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        num_bytes_written = 0
+        num_bytes_written += f.write(FIELD_U16.pack(self.packet_id))
+        for topic in self.topics:
+            num_bytes_written += encode_utf8(topic.name, f)
+            num_bytes_written += f.write(FIELD_U8.pack(topic.max_qos))
+
+        return num_bytes_written
+
+    def encode(self, f):
+        num_bytes_written = 0
+        num_bytes_written += MqttFixedHeader.encode(self, f)
+        num_bytes_written += self.encode_body(f)
+
+        return num_bytes_written
+
+    @staticmethod
+    def decode_body(header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.subscribe
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_PACKET_ID)
+
+        topics = []
+        while header.remaining_len - cb.num_bytes_consumed > 0:
+            num_str_bytes, name = cb.unpack_utf8()
+            max_qos, = cb.unpack(FIELD_U8)
+            try:
+                sub_topic = SubscribeTopic(name, max_qos)
+            except ValueError:
+                raise DecodeError('Invalid QOS {}'.format(max_qos))
+            topics.append(sub_topic)
+
+        assert header.remaining_len - cb.num_bytes_consumed == 0
+
+        return cb.num_bytes_consumed, MqttSubscribe(packet_id, topics)
+
+    @staticmethod
+    def decode(buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        (num_bytes_consumed: int, MqttFixedHeader)
+
+        """
+
+        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
+        if hdr.packet_type != MqttControlPacketType.subscribe:
+            raise DecodeError('Expected connack packet.')
+
+        num_body_bytes_consumed, subscribe = MqttSubscribe.decode_body(hdr, buf[num_header_bytes_consumed:])
+        if hdr.remaining_len != num_body_bytes_consumed:
+            raise DecodeError('Header remaining length not equal to body bytes.')
+        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
+
+        return num_bytes_consumed, subscribe

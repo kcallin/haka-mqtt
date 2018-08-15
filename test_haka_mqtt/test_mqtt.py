@@ -102,3 +102,17 @@ class TestConnackCodec(unittest.TestCase):
     def test_decode(self):
         buf = bytearray(a2b_hex('20020000'))
         packet = mqtt.MqttConnack.decode(buf)
+
+
+class TestSubscribeCodec(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttSubscribe(7, [
+            mqtt.SubscribeTopic('hello', 0),
+            mqtt.SubscribeTopic('x', 1),
+            mqtt.SubscribeTopic('Z', 2),
+        ])
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttSubscribe.decode(buf)

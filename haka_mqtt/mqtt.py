@@ -1,7 +1,6 @@
 import codecs
 from binascii import a2b_hex
 from io import BytesIO
-from struct import pack
 from struct import Struct
 from enum import IntEnum, unique
 
@@ -703,6 +702,12 @@ class CursorBuf():
     def unpack(self, struct):
         """
 
+        Raises
+        ------
+        UnderflowDecodeError
+            Raised when not enough bytes are available in the buffer to
+            decode the struct.
+
         Parameters
         ----------
         struct: struct.Struct
@@ -712,7 +717,36 @@ class CursorBuf():
         tuple
             Tuple of extracted values.
         """
+        if len(self.view) < struct.size:
+            raise UnderflowDecodeError()
+
         v = struct.unpack(self.view[0:struct.size])
+        self.num_bytes_consumed += struct.size
+        self.view = self.view[struct.size:]
+        return v
+
+    def unpack_from(self, struct):
+        """
+
+        Raises
+        ------
+        UnderflowDecodeError
+            Raised when not enough bytes are available in the buffer to
+            decode the struct.
+
+        Parameters
+        ----------
+        struct: struct.Struct
+
+        Returns
+        -------
+        tuple
+            Tuple of extracted values.
+        """
+        if len(self.view) < struct.size:
+            raise UnderflowDecodeError()
+
+        v = struct.unpack_from(self.view)
         self.num_bytes_consumed += struct.size
         self.view = self.view[struct.size:]
         return v

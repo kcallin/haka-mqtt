@@ -181,3 +181,13 @@ class TestUnsubscribe(unittest.TestCase):
         buf = bytearray(bio.getvalue())
 
         recovered = mqtt.MqttUnsubscribe.decode(buf)
+
+
+class TestUnsuback(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttUnsuback(3)
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttUnsuback.decode(buf)

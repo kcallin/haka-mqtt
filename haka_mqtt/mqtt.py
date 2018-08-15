@@ -1218,3 +1218,58 @@ class MqttUnsubscribe(MqttPacketBody):
 
     def __repr__(self):
         return 'MqttUnsubscribe(packet_id={}, topics=[{}])'.format(self.packet_id, ', '.join(self.topics))
+
+
+class MqttUnsuback(MqttPacketBody):
+    def __init__(self, packet_id):
+        """
+
+        Parameters
+        ----------
+        packet_id: int
+            0 <= packet_id <= 2**16-1
+        results: iterable of SubscribeResult
+        """
+        self.packet_id = packet_id
+
+        MqttPacketBody.__init__(self, MqttControlPacketType.unsuback, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        return f.write(FIELD_U16.pack(self.packet_id))
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.unsuback
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_PACKET_ID)
+
+        assert header.remaining_len - cb.num_bytes_consumed == 0
+
+        return cb.num_bytes_consumed, MqttUnsuback(packet_id)
+
+    def __repr__(self):
+        return 'MqttUnsuback(packet_id={})'.format(self.packet_id)

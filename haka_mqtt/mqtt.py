@@ -1273,3 +1273,124 @@ class MqttUnsuback(MqttPacketBody):
 
     def __repr__(self):
         return 'MqttUnsuback(packet_id={})'.format(self.packet_id)
+
+
+class MqttPingreq(MqttPacketBody):
+    def __init__(self):
+        MqttPacketBody.__init__(self, MqttControlPacketType.pingreq, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        return 0
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.pingreq
+
+        return 0, MqttPingreq()
+
+    def __repr__(self):
+        return 'MqttPingreq()'
+
+
+class MqttPingresp(MqttPacketBody):
+    def __init__(self):
+        MqttPacketBody.__init__(self, MqttControlPacketType.pingresp, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        return 0
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.pingresp
+
+        return 0, MqttPingresp()
+
+    def __repr__(self):
+        return 'MqttPingresp()'
+
+
+
+class MqttDisconnect(MqttPacketBody):
+    def __init__(self):
+        MqttPacketBody.__init__(self, MqttControlPacketType.disconnect, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        return 0
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.disconnect
+
+        return 0, MqttDisconnect()
+
+    def __repr__(self):
+        return 'MqttDisconnect()'

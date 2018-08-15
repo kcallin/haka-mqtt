@@ -191,3 +191,33 @@ class TestUnsuback(unittest.TestCase):
         buf = bytearray(bio.getvalue())
 
         recovered = mqtt.MqttUnsuback.decode(buf)
+
+
+class TestPingreq(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPingreq()
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPingreq.decode(buf)
+
+
+class TestPingresp(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPingresp()
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPingresp.decode(buf)
+
+
+class TestDisconnect(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttDisconnect()
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttDisconnect.decode(buf)

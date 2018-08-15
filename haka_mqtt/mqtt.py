@@ -1006,3 +1006,215 @@ class MqttPublish(MqttPacketBody):
             self.dupe,
             self.qos,
             self.retain)
+
+
+class MqttPubrec(MqttPacketBody):
+    def __init__(self, packet_id):
+        self.packet_id = packet_id
+
+        MqttPacketBody.__init__(self, MqttControlPacketType.pubrec, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        return f.write(FIELD_U16.pack(self.packet_id))
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.pubrec
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_U16)
+
+        return cb.num_bytes_consumed, MqttPubrec(packet_id)
+
+    def __repr__(self):
+        msg = 'MqttPubrec(packet_id={})'
+        return msg.format(self.packet_id)
+
+
+class MqttPubrel(MqttPacketBody):
+    def __init__(self, packet_id):
+        self.packet_id = packet_id
+
+        MqttPacketBody.__init__(self, MqttControlPacketType.pubrel, 2)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        return f.write(FIELD_U16.pack(self.packet_id))
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.pubrel
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_U16)
+
+        return cb.num_bytes_consumed, MqttPubrel(packet_id)
+
+    def __repr__(self):
+        msg = 'MqttPubrel(packet_id={})'
+        return msg.format(self.packet_id)
+
+
+class MqttPubcomp(MqttPacketBody):
+    def __init__(self, packet_id):
+        self.packet_id = packet_id
+
+        MqttPacketBody.__init__(self, MqttControlPacketType.pubcomp, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        return f.write(FIELD_U16.pack(self.packet_id))
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.pubcomp
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_U16)
+
+        return cb.num_bytes_consumed, MqttPubcomp(packet_id)
+
+    def __repr__(self):
+        msg = 'MqttPubcomp(packet_id={})'
+        return msg.format(self.packet_id)
+
+
+class MqttUnsubscribe(MqttPacketBody):
+    def __init__(self, packet_id, topics):
+        """
+
+        Parameters
+        ----------
+        packet_id: int
+            0 <= packet_id <= 2**16-1
+        topics: iterable of str
+        """
+        self.packet_id = packet_id
+        self.topics = tuple(topics)
+
+        if isinstance(topics, (str, unicode, bytes)):
+            raise TypeError()
+
+        assert len(topics) >= 1  # MQTT 3.10.3-2
+        flags = 2 # MQTT 3.10.1-1
+        MqttPacketBody.__init__(self, MqttControlPacketType.unsubscribe, flags)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+        num_bytes_written = 0
+        num_bytes_written += f.write(FIELD_U16.pack(self.packet_id))
+        for topic in self.topics:
+            num_bytes_written += encode_utf8(topic, f)
+
+        return num_bytes_written
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttUnsubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.unsubscribe
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_PACKET_ID)
+
+        topics = []
+        while header.remaining_len - cb.num_bytes_consumed > 0:
+            num_str_bytes, topic = cb.unpack_utf8()
+            topics.append(topic)
+
+        assert header.remaining_len - cb.num_bytes_consumed == 0
+
+        return cb.num_bytes_consumed, MqttUnsubscribe(packet_id, topics)
+
+    def __repr__(self):
+        return 'MqttUnsubscribe(packet_id={}, topics=[{}])'.format(self.packet_id, ', '.join(self.topics))

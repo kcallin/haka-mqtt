@@ -141,3 +141,43 @@ class TestPublish(unittest.TestCase):
         buf = bytearray(bio.getvalue())
 
         recovered = mqtt.MqttPublish.decode(buf)
+
+
+class TestPubrec(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPubrec(3)
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPubrec.decode(buf)
+
+
+class TestPubrel(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPubrel(3)
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPubrel.decode(buf)
+
+
+class TestPubcomp(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPubcomp(3)
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPubcomp.decode(buf)
+
+
+class TestUnsubscribe(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttUnsubscribe(3, ['flugelhorn'])
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttUnsubscribe.decode(buf)

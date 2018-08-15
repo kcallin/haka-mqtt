@@ -1,0 +1,56 @@
+import unittest
+
+from haka_mqtt.scheduler import Scheduler
+
+
+class Target():
+    def __init__(self):
+        self.set = False
+
+    def __call__(self, *args, **kwargs):
+        self.set = True
+
+
+class TestScheduler(unittest.TestCase):
+    def test_scheduler(self):
+        s = Scheduler()
+        self.assertIsNone(s.remaining())
+        self.assertEqual(0, len(s))
+
+        s.poll(0)
+        self.assertIsNone(s.remaining())
+        self.assertEqual(0, len(s))
+
+        t0 = Target()
+        t1 = Target()
+        t2 = Target()
+
+        d0 = s.add(0, t0)
+        self.assertEqual(1, len(s))
+        self.assertEqual(0, s.remaining())
+        self.assertFalse(t0.set)
+
+        s.poll(0)
+        self.assertEqual(0, len(s))
+        self.assertIsNone(s.remaining())
+        self.assertTrue(t0.set)
+
+        t0 = Target()
+        d1 = s.add(10, t1)
+        d0 = s.add(3, t0)
+        self.assertEqual(2, len(s))
+        self.assertEqual(s.remaining(), 3)
+
+        s.poll(s.remaining())
+        self.assertTrue(t0.set)
+        self.assertFalse(t1.set)
+        self.assertEqual(s.remaining(), 7)
+        self.assertEqual(1, len(s))
+
+        d1.cancel()
+        self.assertTrue(t0.set)
+        self.assertFalse(t1.set)
+        self.assertIsNone(s.remaining())
+        self.assertEqual(0, len(s))
+        self.assertTrue(d1.expired())
+

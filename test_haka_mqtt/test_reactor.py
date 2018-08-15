@@ -1,21 +1,34 @@
 from __future__ import print_function
 
+import errno
 import logging
 import sys
 import unittest
 import socket
+from io import BytesIO
 from select import select
+from unittest import skip
 
 from mock import Mock
 
+from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
     ReactorState)
 
 
+def recv_into(packet, buf):
+    bio = BytesIO()
+    packet.encode(bio)
+    src_buf = bio.getvalue()
+    buf[0:len(src_buf)] = src_buf
+    return len(src_buf)
+
+
 class TestReactor(unittest.TestCase):
     def setUp(self):
+        logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket = Mock()
         self.endpoint = ('test.mosquitto.org', 1883)
@@ -31,8 +44,32 @@ class TestReactor(unittest.TestCase):
         pass
 
     def test_start(self):
+        self.assertEqual(ReactorState.init, self.reactor.state)
+
+        self.socket.connect.side_effect = socket.gaierror(errno.EINPROGRESS, '')
         self.reactor.start()
         self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.socket.send.return_value = 19
+        self.reactor.write()
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+
+        connack = MqttConnack(False, 0)
+        self.socket.recv_into.side_effect = lambda buf: recv_into(connack, buf)
+        self.reactor.read()
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.socket.send.return_value = 18
+        self.reactor.subscribe([MqttTopic('hello_topic', 0)])
+
+        connack = MqttSuback(0, [SubscribeResult.qos0])
+        self.socket.recv_into.side_effect = lambda buf: recv_into(connack, buf)
+        self.reactor.read()
+        self.assertEqual(self.reactor.state, ReactorState.connected)
 
 
 class TestIntegrationOfReactor(unittest.TestCase):
@@ -52,6 +89,7 @@ class TestIntegrationOfReactor(unittest.TestCase):
     def tearDown(self):
         self.reactor.terminate()
 
+    @skip('for now.')
     def test_start(self):
         self.reactor.start()
         self.assertEqual(self.reactor.state, ReactorState.connecting)

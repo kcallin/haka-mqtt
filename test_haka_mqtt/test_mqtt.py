@@ -107,9 +107,9 @@ class TestConnackCodec(unittest.TestCase):
 class TestSubscribeCodec(unittest.TestCase):
     def test_subscribe(self):
         subscribe = mqtt.MqttSubscribe(7, [
-            mqtt.SubscribeTopic('hello', 0),
-            mqtt.SubscribeTopic('x', 1),
-            mqtt.SubscribeTopic('Z', 2),
+            mqtt.MqttTopic('hello', 0),
+            mqtt.MqttTopic('x', 1),
+            mqtt.MqttTopic('Z', 2),
         ])
         bio = BytesIO()
         subscribe.encode(bio)

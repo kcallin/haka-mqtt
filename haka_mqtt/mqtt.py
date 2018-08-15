@@ -1,4 +1,5 @@
 import codecs
+from binascii import a2b_hex
 from io import BytesIO
 from struct import pack
 from struct import Struct
@@ -306,6 +307,10 @@ class MqttWill(object):
         self.message = message
         self.retain = retain
 
+    def __repr__(self):
+        msg = 'MqttWill(topic={}, payload=0x{}, retain={}, qos={})'
+        return msg.format(self.topic, a2b_hex(self.message), self.retain, self.qos)
+
 
 class MqttPublishHeader(MqttFixedHeader):
     def __init__(self, dupe, retain, will=None):
@@ -541,6 +546,22 @@ class MqttConnect(MqttFixedHeader):
 
         return num_bytes_consumed, connect
 
+    def __repr__(self):
+        # client_id: str
+        # clean_session: bool
+        # keep_alive: int
+        # username: str or None
+        # password: str or None
+        # will: MqttWill
+
+        msg = 'MqttConnect(client_id={}, clean_session={}, keep_alive={}s, username={}, password={}, will={})'
+        return msg.format(repr(self.client_id),
+                          self.clean_session,
+                          self.keep_alive,
+                          self.username,
+                          self.password,
+                          self.will)
+
 
 def decode_utf8_buf(num_bytes_consumed, buf):
     """
@@ -592,6 +613,7 @@ class MqttConnack(MqttFixedHeader):
             Connack return code [Line 709 mqtt]
         """
         assert 0 <= return_code <= 255
+        assert isinstance(session_present, bool)
 
         self.session_present = session_present
         self.return_code = return_code
@@ -641,9 +663,9 @@ class MqttConnack(MqttFixedHeader):
             raise UnderflowDecodeError()
 
         if buf[0] == 0:
-            session_present = 0
+            session_present = False
         elif buf[0] == 1:
-            session_present = 1
+            session_present = True
         else:
             raise DecodeError('Incorrectly encoded session_present flag.')
 
@@ -683,11 +705,11 @@ class MqttConnack(MqttFixedHeader):
         return num_bytes_consumed, connack
 
     def __repr__(self):
-        msg = 'MqttConnack(session_present=%s, return_code=%s)'
+        msg = 'MqttConnack(session_present={}, return_code={})'
         return msg.format(self.session_present, self.return_code)
 
 
-class SubscribeTopic(object):
+class MqttTopic(object):
     def __init__(self, name, max_qos):
         """
 
@@ -702,6 +724,9 @@ class SubscribeTopic(object):
 
         self.name = name
         self.max_qos = max_qos
+
+    def __repr__(self):
+        return 'Topic({}, max_qos={})'.format(self.name, self.max_qos)
 
 
 FIELD_U8 = Struct('>B')
@@ -760,7 +785,7 @@ class MqttSubscribe(MqttFixedHeader):
         ----------
         packet_id: int
             0 <= packet_id <= 2**16-1
-        topics: iterable of SubscribeTopic
+        topics: iterable of MqttTopic
         """
         self.packet_id = packet_id
         self.topics = tuple(topics)
@@ -826,7 +851,7 @@ class MqttSubscribe(MqttFixedHeader):
             num_str_bytes, name = cb.unpack_utf8()
             max_qos, = cb.unpack(FIELD_U8)
             try:
-                sub_topic = SubscribeTopic(name, max_qos)
+                sub_topic = MqttTopic(name, max_qos)
             except ValueError:
                 raise DecodeError('Invalid QOS {}'.format(max_qos))
             topics.append(sub_topic)
@@ -859,6 +884,9 @@ class MqttSubscribe(MqttFixedHeader):
         num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
 
         return num_bytes_consumed, subscribe
+
+    def __repr__(self):
+        return 'MqttSubscribe(packet_id={}, topics=[{}])'.format(self.packet_id, ', '.join(repr(t) for t in self.topics))
 
 
 class SubscribeResult(IntEnum):
@@ -992,3 +1020,6 @@ class MqttSuback(MqttFixedHeader):
         num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
 
         return num_bytes_consumed, suback
+
+    def __repr__(self):
+        return 'MqttSuback(packet_id={}, results=[{}])'.format(self.packet_id, ', '.join(str(r) for r in self.results))

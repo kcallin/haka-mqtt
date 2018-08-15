@@ -3,13 +3,14 @@ import socket
 import logging
 from binascii import b2a_hex
 from io import BytesIO
+from itertools import cycle
 
 from enum import (
     IntEnum,
     unique,
 )
 
-from haka_mqtt.mqtt import MqttConnect
+from haka_mqtt.mqtt import MqttConnect, MqttSubscribe, MqttFixedHeader, MqttControlPacketType, MqttConnack, MqttSuback
 
 
 class ReactorProperties:
@@ -17,18 +18,21 @@ class ReactorProperties:
     Attributes
     ----------
     socket: socket.socket
+    client_id: str
     """
     socket = None
     endpoint = None
+    client_id = None
 
 
 @unique
 class ReactorState(IntEnum):
     init = 0
     connecting = 1
-    connack = 4
-    error = 2
-    closed = 3
+    connack = 2
+    connected = 3
+    error = 4
+    closed = 5
 
 
 class ReactorError:
@@ -68,6 +72,8 @@ class Reactor:
 
         self.socket = properties.socket
         self.endpoint = properties.endpoint
+        self.__packet_id_iter = cycle(xrange(0, 2**16-1))
+        self.__queue = []
         self.__state = ReactorState.init
         self.__error = None
 
@@ -84,6 +90,21 @@ class Reactor:
     @property
     def state(self):
         return self.__state
+
+    def subscribe(self, topics):
+        """
+
+        Parameters
+        ----------
+        topics: iterable of MqttTopic
+
+        Returns
+        -------
+
+        """
+        assert self.state == ReactorState.connected
+        subscribe = MqttSubscribe(self.__packet_id_iter.next(), topics)
+        self.__write_packet(subscribe)
 
     def start(self):
         assert self.state == ReactorState.init
@@ -127,22 +148,50 @@ class Reactor:
         num_bytes_received = self.socket.recv_into(buf)
         self.__log.debug('Received %d bytes 0x%s', num_bytes_received, b2a_hex(buf[0:num_bytes_received]))
 
+        num_bytes_consumed, header = MqttFixedHeader.decode(buf)
+        if len(buf) >= header.remaining_len:
+            body = buf[num_bytes_consumed:]
+            if header.packet_type == MqttControlPacketType.connack:
+                num_bytes_consumed, connack = MqttConnack.decode_body(body)
+                self.__on_connack(connack)
+            elif header.packet_type == MqttControlPacketType.suback:
+                num_bytes_consumed, suback = MqttSuback.decode_body(header, body)
+                self.__on_suback(suback)
+            else:
+                assert False
+
+    def __on_connack(self, connack):
+        if self.state is ReactorState.connack:
+            self.__log.info('Received %s.', repr(connack))
+            self.__state = ReactorState.connected
+        else:
+            assert False
+
+    def __on_suback(self, suback):
+        if self.state is ReactorState.connected:
+            self.__log.info('Received %s.', repr(suback))
+        else:
+            assert False
+
+    def __write_packet(self, packet):
+        self.__log.info('Sending %s.', repr(packet))
+        bio = BytesIO()
+        packet.encode(bio)
+        buf = bio.getvalue()
+        self.__log.debug('Sending %d bytes 0x%s.', len(buf), b2a_hex(buf))
+        self.__wbuf.append(buf)
+        self.__flush()
+
     def __on_connect(self):
         assert self.state == ReactorState.connecting
-
-        self.__log.info('Connected.')
         self.__state = ReactorState.connack
-        connect_packet = MqttConnect('hello', True, 10*60)
-        bio = BytesIO()
-        connect_packet.encode(bio)
-        self.__wbuf.append(bio.getvalue())
-        self.__flush()
+        self.__write_packet(MqttConnect('hello', True, 10*60))
 
     def __flush(self):
         while self.__wbuf:
             try:
                 num_bytes_written = self.socket.send(self.__wbuf[0])
-                assert len(self.__wbuf[0]) == num_bytes_written
+                assert len(self.__wbuf[0]) == num_bytes_written, len(self.__wbuf[0])
                 self.__wbuf.pop(0)
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:

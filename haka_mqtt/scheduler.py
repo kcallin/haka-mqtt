@@ -5,9 +5,6 @@ class Deadline(object):
     def __init__(self, deadline_entry):
         self.__deadline_entry = deadline_entry
 
-    def instant(self):
-        return self.__deadline_entry.instant
-
     def expired(self):
         return self.__deadline_entry.expired
 

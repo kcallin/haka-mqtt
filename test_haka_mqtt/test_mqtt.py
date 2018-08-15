@@ -131,3 +131,13 @@ class TestSubackCodec(unittest.TestCase):
         buf = bytearray(bio.getvalue())
 
         recovered = mqtt.MqttSuback.decode(buf)
+
+
+class TestPublish(unittest.TestCase):
+    def test_subscribe(self):
+        subscribe = mqtt.MqttPublish(3, 'flugelhorn', 'silly_payload', False, 2, False)
+        bio = BytesIO()
+        subscribe.encode(bio)
+        buf = bytearray(bio.getvalue())
+
+        recovered = mqtt.MqttPublish.decode(buf)

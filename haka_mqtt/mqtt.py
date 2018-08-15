@@ -777,6 +777,21 @@ class CursorBuf():
 
         return num_bytes_consumed, s
 
+    def unpack_bytes(self, num_bytes):
+        """
+
+        Returns
+        -------
+        int, str
+            Number of bytes consumed, string
+        """
+        buf = self.view[0:num_bytes]
+
+        self.num_bytes_consumed += num_bytes
+        self.view = self.view[num_bytes:]
+
+        return num_bytes, buf
+
 
 class MqttSubscribe(MqttFixedHeader):
     def __init__(self, packet_id, topics):
@@ -1024,3 +1039,120 @@ class MqttSuback(MqttFixedHeader):
 
     def __repr__(self):
         return 'MqttSuback(packet_id={}, results=[{}])'.format(self.packet_id, ', '.join(str(r) for r in self.results))
+
+
+class MqttPublish(MqttFixedHeader):
+    def __init__(self, packet_id, topic, payload, dupe, qos, retain):
+        assert 0 <= qos <= 2
+
+        self.packet_id = packet_id
+        self.topic = topic
+        self.payload = payload
+        self.dupe = dupe
+        self.qos = qos
+        self.retain = retain
+
+        flags = 0
+        if dupe:
+            flags |= 0x08
+
+        flags |= (qos << 1)
+
+        if retain:
+            flags |= 0x01
+
+        bio = BytesIO()
+        self.encode_body(bio)
+        num_body_bytes = len(bio.getvalue())
+        MqttFixedHeader.__init__(self, MqttControlPacketType.publish, flags, num_body_bytes)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        num_bytes_written = 0
+        num_bytes_written += encode_utf8(self.topic, f)
+        num_bytes_written += f.write(FIELD_U16.pack(self.packet_id))
+        num_bytes_written += f.write(self.payload)
+
+        return num_bytes_written
+
+    def encode(self, f):
+        num_bytes_written = 0
+        num_bytes_written += MqttFixedHeader.encode(self, f)
+        num_bytes_written += self.encode_body(f)
+
+        return num_bytes_written
+
+    @staticmethod
+    def decode_body(header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.publish
+
+        dupe = header.flags & 0x08
+        retain = header.flags & 0x01
+        qos = ((header.flags & 0x06) >> 1)
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        num_bytes_consumed, topic_name = cb.unpack_utf8()
+        packet_id, = cb.unpack(FIELD_PACKET_ID)
+
+        payload_len = header.remaining_len - cb.num_bytes_consumed
+        num_bytes_consumed, payload = cb.unpack_bytes(payload_len)
+
+        return cb.num_bytes_consumed, MqttPublish(packet_id, topic_name, payload, dupe, qos, retain)
+
+    @staticmethod
+    def decode(buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        (num_bytes_consumed: int, MqttFixedHeader)
+
+        """
+
+        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
+        if hdr.packet_type != MqttControlPacketType.publish:
+            raise DecodeError('Expected publish packet.')
+
+        num_body_bytes_consumed, suback = MqttPublish.decode_body(hdr, buf[num_header_bytes_consumed:])
+        if hdr.remaining_len != num_body_bytes_consumed:
+            raise DecodeError('Header remaining length not equal to body bytes.')
+        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
+
+        return num_bytes_consumed, suback
+
+    def __repr__(self):
+        msg = 'MqttPublish(packet_id={}, topic={}, payload=0x{}, dupe={}, qos={}, retain={})'
+        return msg.format(
+            self.packet_id,
+            self.topic,
+            a2b_hex(self.payload),
+            self.dupe,
+            self.qos,
+            self.retain)

@@ -152,7 +152,7 @@ class Reactor:
         if len(buf) >= header.remaining_len:
             body = buf[num_bytes_consumed:]
             if header.packet_type == MqttControlPacketType.connack:
-                num_bytes_consumed, connack = MqttConnack.decode_body(body)
+                num_bytes_consumed, connack = MqttConnack.decode_body(header, body)
                 self.__on_connack(connack)
             elif header.packet_type == MqttControlPacketType.suback:
                 num_bytes_consumed, suback = MqttSuback.decode_body(header, body)

@@ -312,8 +312,8 @@ class MqttWill(object):
         return msg.format(self.topic, a2b_hex(self.message), self.retain, self.qos)
 
 
-class MqttPublishHeader(MqttFixedHeader):
-    def __init__(self, dupe, retain, will=None):
+class MqttPacketBody(MqttFixedHeader):
+    def __init__(self, packet_type, flags):
         """
 
         Parameters
@@ -323,24 +323,49 @@ class MqttPublishHeader(MqttFixedHeader):
         will: MqttWill
         """
 
-        self.dupe = dupe
-        self.will = will
-        self.retain = retain
+        bio = BytesIO()
+        self.encode_body(bio)
+        num_body_bytes = len(bio.getvalue())
+        MqttFixedHeader.__init__(self, packet_type, flags, num_body_bytes)
 
-        flags = (self.qos << 1)
-        if self.dupe:
-            flags = flags | 0x04
+    def encode_body(self, f):
+        raise NotImplementedError()
 
-        if self.retain:
-            flags = flags | 0x01
+    def encode(self, f):
+        num_bytes_written = 0
+        num_bytes_written += MqttFixedHeader.encode(self, f)
+        num_bytes_written += self.encode_body(f)
 
-        MqttFixedHeader.__init__(self,
-                                 MqttControlPacketType.publish,
-                                 flags,
-                                 0)
+        return num_bytes_written
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        raise NotImplementedError()
+
+    @classmethod
+    def decode(cls, buf):
+        """
+
+        Parameters
+        ----------
+        buf
+
+        Returns
+        -------
+        (num_bytes_consumed: int, MqttFixedHeader)
+
+        """
+
+        num_header_bytes_consumed, header = MqttFixedHeader.decode(buf)
+        num_body_bytes_consumed, connect = cls.decode_body(header, buf[num_header_bytes_consumed:])
+        if header.remaining_len != num_body_bytes_consumed:
+            raise DecodeError('Header remaining length not equal to body bytes.')
+        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
+
+        return num_bytes_consumed, connect
 
 
-class MqttConnect(MqttFixedHeader):
+class MqttConnect(MqttPacketBody):
     CONNECT_HEADER = b'\x00\x04MQTT'
     PROTOCOL_LEVEL = b'\x04'
 
@@ -363,10 +388,7 @@ class MqttConnect(MqttFixedHeader):
         self.keep_alive = keep_alive
         self.will = will
 
-        bio = BytesIO()
-        self.encode_body(bio)
-        num_body_bytes = len(bio.getvalue())
-        MqttFixedHeader.__init__(self, MqttControlPacketType.connect, 0, num_body_bytes)
+        MqttPacketBody.__init__(self, MqttControlPacketType.connect, 0)
 
     @staticmethod
     def __encode_name(f):
@@ -443,15 +465,8 @@ class MqttConnect(MqttFixedHeader):
 
         return num_bytes_written
 
-    def encode(self, f):
-        num_bytes_written = 0
-        num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_body(f)
-
-        return num_bytes_written
-
-    @staticmethod
-    def decode_body(buf):
+    @classmethod
+    def decode_body(cls, header, buf):
         """
 
         Parameters
@@ -521,31 +536,6 @@ class MqttConnect(MqttFixedHeader):
         connect = MqttConnect(client_id, clean_session, keep_alive, username, password, will)
         return num_bytes_consumed, connect
 
-    @staticmethod
-    def decode(buf):
-        """
-
-        Parameters
-        ----------
-        buf
-
-        Returns
-        -------
-        (num_bytes_consumed: int, MqttFixedHeader)
-
-        """
-
-        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
-        if hdr.packet_type != MqttControlPacketType.connect:
-            raise DecodeError('Expected connack packet.')
-
-        num_body_bytes_consumed, connect = MqttConnect.decode_body(buf[num_header_bytes_consumed:])
-        if hdr.remaining_len != num_body_bytes_consumed:
-            raise DecodeError('Header remaining length not equal to body bytes.')
-        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
-
-        return num_bytes_consumed, connect
-
     def __repr__(self):
         # client_id: str
         # clean_session: bool
@@ -611,7 +601,7 @@ class ConnackResult(IntEnum):
     fail_not_authorized = 5
 
 
-class MqttConnack(MqttFixedHeader):
+class MqttConnack(MqttPacketBody):
     def __init__(self, session_present, return_code):
         """
 
@@ -628,10 +618,7 @@ class MqttConnack(MqttFixedHeader):
         self.session_present = session_present
         self.return_code = return_code
 
-        bio = BytesIO()
-        self.encode_body(bio)
-        num_body_bytes = len(bio.getvalue())
-        MqttFixedHeader.__init__(self, MqttControlPacketType.connack, 0, num_body_bytes)
+        MqttPacketBody.__init__(self, MqttControlPacketType.connack, 0)
 
     def encode_body(self, f):
         """
@@ -657,17 +644,8 @@ class MqttConnack(MqttFixedHeader):
 
         return num_bytes_written
 
-    def encode(self, f):
-        num_bytes_written = 0
-        num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_body(f)
-
-        return num_bytes_written
-
-        return 1
-
-    @staticmethod
-    def decode_body(buf):
+    @classmethod
+    def decode_body(cls, header, buf):
         num_bytes_consumed = 2
         if len(buf) < num_bytes_consumed:
             raise UnderflowDecodeError()
@@ -685,29 +663,6 @@ class MqttConnack(MqttFixedHeader):
             raise DecodeError("Unrecognized return code.")
 
         return num_bytes_consumed, MqttConnack(session_present, return_code)
-
-    @staticmethod
-    def decode(buf):
-        """
-
-        Parameters
-        ----------
-        buf
-
-        Returns
-        -------
-        (num_bytes_consumed: int, MqttFixedHeader)
-
-        """
-
-        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
-        if hdr.packet_type != MqttControlPacketType.connack:
-            raise DecodeError('Expected connack packet.')
-
-        num_body_bytes_consumed, connack = MqttConnack.decode_body(buf[num_header_bytes_consumed:])
-        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
-
-        return num_bytes_consumed, connack
 
     def __repr__(self):
         msg = 'MqttConnack(session_present={}, return_code={})'
@@ -793,7 +748,7 @@ class CursorBuf():
         return num_bytes, buf
 
 
-class MqttSubscribe(MqttFixedHeader):
+class MqttSubscribe(MqttPacketBody):
     def __init__(self, packet_id, topics):
         """
 
@@ -811,10 +766,7 @@ class MqttSubscribe(MqttFixedHeader):
 
         assert len(topics) >= 1  # MQTT 3.8.3-3
         flags = 2 # MQTT 3.8.1-1
-        bio = BytesIO()
-        self.encode_body(bio)
-        num_body_bytes = len(bio.getvalue())
-        MqttFixedHeader.__init__(self, MqttControlPacketType.subscribe, flags, num_body_bytes)
+        MqttPacketBody.__init__(self, MqttControlPacketType.subscribe, flags)
 
     def encode_body(self, f):
         """
@@ -836,15 +788,8 @@ class MqttSubscribe(MqttFixedHeader):
 
         return num_bytes_written
 
-    def encode(self, f):
-        num_bytes_written = 0
-        num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_body(f)
-
-        return num_bytes_written
-
-    @staticmethod
-    def decode_body(header, buf):
+    @classmethod
+    def decode_body(cls, header, buf):
         """
 
         Parameters
@@ -875,31 +820,6 @@ class MqttSubscribe(MqttFixedHeader):
         assert header.remaining_len - cb.num_bytes_consumed == 0
 
         return cb.num_bytes_consumed, MqttSubscribe(packet_id, topics)
-
-    @staticmethod
-    def decode(buf):
-        """
-
-        Parameters
-        ----------
-        buf
-
-        Returns
-        -------
-        (num_bytes_consumed: int, MqttFixedHeader)
-
-        """
-
-        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
-        if hdr.packet_type != MqttControlPacketType.subscribe:
-            raise DecodeError('Expected connack packet.')
-
-        num_body_bytes_consumed, subscribe = MqttSubscribe.decode_body(hdr, buf[num_header_bytes_consumed:])
-        if hdr.remaining_len != num_body_bytes_consumed:
-            raise DecodeError('Header remaining length not equal to body bytes.')
-        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
-
-        return num_bytes_consumed, subscribe
 
     def __repr__(self):
         return 'MqttSubscribe(packet_id={}, topics=[{}])'.format(self.packet_id, ', '.join(repr(t) for t in self.topics))
@@ -934,7 +854,7 @@ class SubscribeResult(IntEnum):
             raise TypeError()
 
 
-class MqttSuback(MqttFixedHeader):
+class MqttSuback(MqttPacketBody):
     def __init__(self, packet_id, results):
         """
 
@@ -950,10 +870,7 @@ class MqttSuback(MqttFixedHeader):
         assert len(self.results) >= 1  # MQTT 3.8.3-3
 
         flags = 0
-        bio = BytesIO()
-        self.encode_body(bio)
-        num_body_bytes = len(bio.getvalue())
-        MqttFixedHeader.__init__(self, MqttControlPacketType.suback, flags, num_body_bytes)
+        MqttPacketBody.__init__(self, MqttControlPacketType.suback, flags)
 
     def encode_body(self, f):
         """
@@ -974,15 +891,8 @@ class MqttSuback(MqttFixedHeader):
 
         return num_bytes_written
 
-    def encode(self, f):
-        num_bytes_written = 0
-        num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_body(f)
-
-        return num_bytes_written
-
-    @staticmethod
-    def decode_body(header, buf):
+    @classmethod
+    def decode_body(cls, header, buf):
         """
 
         Parameters
@@ -1012,36 +922,11 @@ class MqttSuback(MqttFixedHeader):
 
         return cb.num_bytes_consumed, MqttSuback(packet_id, results)
 
-    @staticmethod
-    def decode(buf):
-        """
-
-        Parameters
-        ----------
-        buf
-
-        Returns
-        -------
-        (num_bytes_consumed: int, MqttFixedHeader)
-
-        """
-
-        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
-        if hdr.packet_type != MqttControlPacketType.suback:
-            raise DecodeError('Expected suback packet.')
-
-        num_body_bytes_consumed, suback = MqttSuback.decode_body(hdr, buf[num_header_bytes_consumed:])
-        if hdr.remaining_len != num_body_bytes_consumed:
-            raise DecodeError('Header remaining length not equal to body bytes.')
-        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
-
-        return num_bytes_consumed, suback
-
     def __repr__(self):
         return 'MqttSuback(packet_id={}, results=[{}])'.format(self.packet_id, ', '.join(str(r) for r in self.results))
 
 
-class MqttPublish(MqttFixedHeader):
+class MqttPublish(MqttPacketBody):
     def __init__(self, packet_id, topic, payload, dupe, qos, retain):
         assert 0 <= qos <= 2
 
@@ -1061,10 +946,7 @@ class MqttPublish(MqttFixedHeader):
         if retain:
             flags |= 0x01
 
-        bio = BytesIO()
-        self.encode_body(bio)
-        num_body_bytes = len(bio.getvalue())
-        MqttFixedHeader.__init__(self, MqttControlPacketType.publish, flags, num_body_bytes)
+        MqttPacketBody.__init__(self, MqttControlPacketType.publish, flags)
 
     def encode_body(self, f):
         """
@@ -1086,15 +968,8 @@ class MqttPublish(MqttFixedHeader):
 
         return num_bytes_written
 
-    def encode(self, f):
-        num_bytes_written = 0
-        num_bytes_written += MqttFixedHeader.encode(self, f)
-        num_bytes_written += self.encode_body(f)
-
-        return num_bytes_written
-
-    @staticmethod
-    def decode_body(header, buf):
+    @classmethod
+    def decode_body(cls, header, buf):
         """
 
         Parameters
@@ -1121,31 +996,6 @@ class MqttPublish(MqttFixedHeader):
         num_bytes_consumed, payload = cb.unpack_bytes(payload_len)
 
         return cb.num_bytes_consumed, MqttPublish(packet_id, topic_name, payload, dupe, qos, retain)
-
-    @staticmethod
-    def decode(buf):
-        """
-
-        Parameters
-        ----------
-        buf
-
-        Returns
-        -------
-        (num_bytes_consumed: int, MqttFixedHeader)
-
-        """
-
-        num_header_bytes_consumed, hdr = MqttFixedHeader.decode(buf)
-        if hdr.packet_type != MqttControlPacketType.publish:
-            raise DecodeError('Expected publish packet.')
-
-        num_body_bytes_consumed, suback = MqttPublish.decode_body(hdr, buf[num_header_bytes_consumed:])
-        if hdr.remaining_len != num_body_bytes_consumed:
-            raise DecodeError('Header remaining length not equal to body bytes.')
-        num_bytes_consumed = num_header_bytes_consumed + num_body_bytes_consumed
-
-        return num_bytes_consumed, suback
 
     def __repr__(self):
         msg = 'MqttPublish(packet_id={}, topic={}, payload=0x{}, dupe={}, qos={}, retain={})'

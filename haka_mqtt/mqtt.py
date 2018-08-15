@@ -753,9 +753,6 @@ class CursorBuf():
 
 
 class MqttSubscribe(MqttFixedHeader):
-    CONNECT_HEADER = b'\x00\x04MQTT'
-    PROTOCOL_LEVEL = b'\x04'
-
     def __init__(self, packet_id, topics):
         """
 

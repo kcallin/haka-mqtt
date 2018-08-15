@@ -3,7 +3,7 @@ from binascii import a2b_hex
 from io import BytesIO
 from struct import pack
 from struct import Struct
-from enum import IntEnum
+from enum import IntEnum, unique
 
 
 class EncodeError(Exception):
@@ -601,6 +601,16 @@ def decode_bytes_buf(num_bytes_consumed, buf):
     return (num_bytes_consumed, buf, s)
 
 
+@unique
+class ConnackResult(IntEnum):
+    accepted = 0
+    fail_bad_protocol_version = 1
+    fail_bad_client_id = 2
+    fail_server_unavailable = 3
+    fail_bad_username_or_password = 4
+    fail_not_authorized = 5
+
+
 class MqttConnack(MqttFixedHeader):
     def __init__(self, session_present, return_code):
         """
@@ -669,17 +679,12 @@ class MqttConnack(MqttFixedHeader):
         else:
             raise DecodeError('Incorrectly encoded session_present flag.')
 
-        return_code = buf[1]
-        # 0 - conn accepted
-        # 1 - conn refused, unnacceptable protocol version
-        # 2 - conn refused, identifier rejected
-        # 3 - conn refused server unavailable
-        # 4 - conn refused bad user name or password
-        # 5 - conn refused not authorized.
-        if 0 <= return_code <= 5:
-            return num_bytes_consumed, MqttConnack(session_present, return_code)
-        else:
+        try:
+            return_code = ConnackResult(buf[1])
+        except ValueError:
             raise DecodeError("Unrecognized return code.")
+
+        return num_bytes_consumed, MqttConnack(session_present, return_code)
 
     @staticmethod
     def decode(buf):
@@ -732,10 +737,6 @@ class MqttTopic(object):
 FIELD_U8 = Struct('>B')
 FIELD_U16 = Struct('>H')
 FIELD_PACKET_ID = FIELD_U16
-
-def write_u16(i, file):
-    file.write(FIELD_PACKET_ID.pack(i))
-    return 2
 
 
 class CursorBuf():

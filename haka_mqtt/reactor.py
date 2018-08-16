@@ -21,8 +21,8 @@ from haka_mqtt.mqtt import (
     UnderflowDecodeError,
     DecodeError,
     MqttPublish,
-    MqttPuback
-)
+    MqttPuback,
+    MqttDisconnect)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -243,6 +243,18 @@ class Reactor:
 
     def stop(self):
         self.__assert_state_rules()
+        if self.state is ReactorState.connected:
+            self.__log.info('Stopping.')
+            if not self.__in_flight_packets:
+                self.__write_packet(MqttDisconnect())
+
+                if not self.__wbuf:
+                    self.socket.shutdown(socket.SHUT_WR)
+
+            self.__state = ReactorState.stopping
+        else:
+            raise NotImplementedError()
+
         self.__assert_state_rules()
 
     def terminate(self):
@@ -272,19 +284,20 @@ class Reactor:
         self.__log.debug('Received %d bytes 0x%s', len(new_bytes), BufferStr(new_bytes))
         self.__rbuf.extend(new_bytes)
 
-        num_header_bytes, header = MqttFixedHeader.decode(self.__rbuf)
-        num_packet_bytes = num_header_bytes + header.remaining_len
-        if len(self.__rbuf) >= num_packet_bytes:
-            if header.packet_type == MqttControlPacketType.connack:
-                self.__on_connack(self.__decode_packet_body(header, num_header_bytes, MqttConnack))
-            elif header.packet_type == MqttControlPacketType.suback:
-                self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttSuback))
-            elif header.packet_type == MqttControlPacketType.puback:
-                self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
-            elif header.packet_type == MqttControlPacketType.publish:
-                self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
-            else:
-                self.__abort(DecodeReactorError('Received unsupported message type {}.'.format(header.packet_type)))
+        while True:
+            num_header_bytes, header = MqttFixedHeader.decode(self.__rbuf)
+            num_packet_bytes = num_header_bytes + header.remaining_len
+            if len(self.__rbuf) >= num_packet_bytes:
+                if header.packet_type == MqttControlPacketType.connack:
+                    self.__on_connack(self.__decode_packet_body(header, num_header_bytes, MqttConnack))
+                elif header.packet_type == MqttControlPacketType.suback:
+                    self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttSuback))
+                elif header.packet_type == MqttControlPacketType.puback:
+                    self.__on_puback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
+                elif header.packet_type == MqttControlPacketType.publish:
+                    self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
+                else:
+                    self.__abort(DecodeReactorError('Received unsupported message type {}.'.format(header.packet_type)))
 
     def read(self):
         self.__assert_state_rules()
@@ -339,6 +352,16 @@ class Reactor:
                 self.__write_packet(MqttPuback(publish.packet_id))
             elif publish.qos == 2:
                 raise NotImplementedError()
+        elif self.state is ReactorState.stopping:
+            if publish.qos == 0:
+                pass
+            elif publish.qos == 1:
+                self.__log.info('Receiving %s but not sending puback because client is stopping.', repr(publish))
+            elif publish.qos == 2:
+                raise NotImplementedError()
+
+            if self.on_publish is not None:
+                self.on_publish(self, publish)
         else:
             assert False, 'Received MqttSuback at an inappropriate time.'
 
@@ -384,8 +407,8 @@ class Reactor:
 
             if in_flight:
                 self.__log.info('Received %s.', repr(puback))
-                if self.on_suback is not None:
-                    self.on_suback(self, puback)
+                if self.on_puback is not None:
+                    self.on_puback(self, puback)
             else:
                 self.__log.warning('Received %s for a mid that is not in-flight; aborting.', repr(puback))
                 self.__abort(DecodeReactorError())
@@ -397,7 +420,15 @@ class Reactor:
             self.__log.warning('Remote closed stream unexpectedly.')
             self.__abort(DecodeReactorError('Remote closed unexpectedly.'))
         elif self.state in (ReactorState.stopping,):
-            raise NotImplementedError()
+            if len(self.__rbuf) > 0:
+                self.__log.warning('While stopping remote closed stream in the middle of a packet transmission with 0x%s still in the buffer.', b2a_hex(self.__rbuf))
+            elif len(self.__wbuf) > 0:
+                self.__log.warning('While stopping remote closed stream before consuming bytes.')
+            else:
+                self.__log.info('Remote gracefully closed stream.')
+
+            self.socket.close()
+            self.__state = ReactorState.stopped
         else:
             assert False, 'Received muted_remote at an inappropriate time.'
 

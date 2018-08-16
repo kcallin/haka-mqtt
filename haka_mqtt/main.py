@@ -4,11 +4,14 @@ import socket
 from select import select
 
 from haka_mqtt.mqtt import MqttTopic
-from haka_mqtt.reactor import ReactorProperties, SystemClock, Reactor
-
+from haka_mqtt.reactor import ReactorProperties, SystemClock, Reactor, ReactorState
 
 TOPIC = 'bubbles'
 count = 0
+
+
+def on_disconnect(reactor):
+    pass
 
 
 def on_connack(reactor, p):
@@ -47,8 +50,13 @@ def on_puback(reactor, p):
     p: MqttPuback
     """
     global count
-    count += 1
-    reactor.publish(TOPIC, str(count), 1)
+
+    if count < 10:
+        count += 1
+        reactor.publish(TOPIC, str(count), 1)
+    else:
+        reactor.stop()
+
 
 def on_publish(reactor, p):
     """
@@ -81,7 +89,7 @@ def main():
     reactor.on_publish = on_publish
     reactor.start()
 
-    while True:
+    while reactor.state not in (ReactorState.stopped, ReactorState.error):
         if reactor.want_read():
             rlist = [reactor.socket]
         else:

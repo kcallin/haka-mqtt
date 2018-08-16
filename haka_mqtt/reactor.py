@@ -321,7 +321,13 @@ class Reactor:
             self.__log.info('Received %s.', repr(publish))
             if self.on_publish is not None:
                 self.on_publish(self, publish)
-            self.__write_packet(MqttPuback(publish.packet_id))
+
+            if publish.qos == 0:
+                pass
+            elif publish.qos == 1:
+                self.__write_packet(MqttPuback(publish.packet_id))
+            elif publish.qos == 2:
+                raise NotImplementedError()
         else:
             assert False, 'Received MqttSuback at an inappropriate time.'
 

@@ -88,7 +88,8 @@ class SocketError(ReactorError):
 
 
 class DecodeReactorError(ReactorError):
-    pass
+    def __init__(self, description):
+        self.description = description
 
 
 class Reactor:
@@ -100,6 +101,7 @@ class Reactor:
         properties: ReactorProperties
         """
 
+        assert properties.client_id is not None
         assert properties.socket is not None
         assert properties.endpoint is not None
 
@@ -123,6 +125,11 @@ class Reactor:
         self.__in_flight_packets = {}
 
         self.__scheduler = Scheduler()
+
+        self.on_puback = None
+        self.on_suback = None
+        self.on_connack = None
+        self.on_publish = None
 
     @property
     def client_id(self):
@@ -236,7 +243,7 @@ class Reactor:
         self.__assert_state_rules()
 
     def want_read(self):
-        return self.state in [ReactorState.connack]
+        return self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping)
 
     def want_write(self):
         return bool(self.__wbuf) or self.state == ReactorState.connecting
@@ -263,6 +270,8 @@ class Reactor:
                 self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttSuback))
             elif header.packet_type == MqttControlPacketType.puback:
                 self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
+            elif header.packet_type == MqttControlPacketType.publish:
+                self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
             else:
                 self.__abort(DecodeReactorError('Received unsupported message type {}.'.format(header.packet_type)))
 
@@ -294,8 +303,27 @@ class Reactor:
         if self.state is ReactorState.connack:
             self.__log.info('Received %s.', repr(connack))
             self.__state = ReactorState.connected
+
+            if self.on_connack is not None:
+                self.on_connack(self, connack)
         else:
             self.__abort(DecodeReactorError('Received connack at an inappropriate time.'))
+
+    def __on_publish(self, publish):
+        """
+
+        Parameters
+        ----------
+        publish: MqttPublish
+
+        """
+        if self.state is ReactorState.connected:
+            self.__log.info('Received %s.', repr(publish))
+            if self.on_publish is not None:
+                self.on_publish(self, publish)
+            self.__write_packet(MqttPuback(publish.packet_id))
+        else:
+            assert False, 'Received MqttSuback at an inappropriate time.'
 
     def __on_suback(self, suback):
         """
@@ -306,8 +334,16 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            if suback.packet_id in self.__in_flight_packets:
+            try:
+                self.__in_flight_packets.pop(suback.packet_id)
+                in_flight = True
+            except KeyError:
+                in_flight = False
+
+            if in_flight:
                 self.__log.info('Received %s.', repr(suback))
+                if self.on_suback is not None:
+                    self.on_suback(self, suback)
             else:
                 self.__log.warning('Received %s for a mid that is not in-flight; aborting.', repr(suback))
                 self.__abort(DecodeReactorError())
@@ -323,8 +359,16 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            if puback.packet_id in self.__in_flight_packets:
+            try:
+                self.__in_flight_packets.pop(puback.packet_id)
+                in_flight = True
+            except KeyError:
+                in_flight = False
+
+            if in_flight:
                 self.__log.info('Received %s.', repr(puback))
+                if self.on_suback is not None:
+                    self.on_suback(self, puback)
             else:
                 self.__log.warning('Received %s for a mid that is not in-flight; aborting.', repr(puback))
                 self.__abort(DecodeReactorError())
@@ -332,7 +376,10 @@ class Reactor:
             assert False, 'Received MqttPuback at an inappropriate time.'
 
     def __on_muted_remote(self):
-        if self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
+        if self.state in (ReactorState.connack, ReactorState.connected):
+            self.__log.warning('Remote closed stream unexpectedly.')
+            self.__abort(DecodeReactorError('Remote closed unexpectedly.'))
+        elif self.state in (ReactorState.stopping,):
             raise NotImplementedError()
         else:
             assert False, 'Received muted_remote at an inappropriate time.'

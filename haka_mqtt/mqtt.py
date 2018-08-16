@@ -1,5 +1,5 @@
 import codecs
-from binascii import a2b_hex
+from binascii import a2b_hex, b2a_hex
 from io import BytesIO
 from struct import Struct
 from enum import IntEnum, unique
@@ -685,7 +685,7 @@ class MqttTopic(object):
         self.max_qos = max_qos
 
     def __repr__(self):
-        return 'Topic({}, max_qos={})'.format(self.name, self.max_qos)
+        return 'Topic({}, max_qos={})'.format(repr(self.name), self.max_qos)
 
 
 FIELD_U8 = Struct('>B')
@@ -977,6 +977,8 @@ class MqttPublish(MqttPacketBody):
         """
         assert 0 <= packet_id <= 2**16 - 1
         assert 0 <= qos <= 2
+        assert isinstance(dupe, bool)
+        assert isinstance(retain, bool)
 
         self.packet_id = packet_id
         self.topic = topic
@@ -1032,8 +1034,8 @@ class MqttPublish(MqttPacketBody):
         """
         assert header.packet_type == MqttControlPacketType.publish
 
-        dupe = header.flags & 0x08
-        retain = header.flags & 0x01
+        dupe = bool(header.flags & 0x08)
+        retain = bool(header.flags & 0x01)
         qos = ((header.flags & 0x06) >> 1)
 
         cb = CursorBuf(buf[0:header.remaining_len])
@@ -1050,7 +1052,7 @@ class MqttPublish(MqttPacketBody):
         return msg.format(
             self.packet_id,
             self.topic,
-            a2b_hex(self.payload),
+            b2a_hex(self.payload),
             self.dupe,
             self.qos,
             self.retain)

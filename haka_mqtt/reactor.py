@@ -264,7 +264,7 @@ class Reactor:
             elif header.packet_type == MqttControlPacketType.puback:
                 self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
             else:
-                raise NotImplementedError()
+                self.__abort(DecodeReactorError('Received unsupported message type {}.'.format(header.packet_type)))
 
     def read(self):
         self.__assert_state_rules()

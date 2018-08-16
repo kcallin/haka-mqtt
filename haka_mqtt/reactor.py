@@ -24,14 +24,7 @@ from haka_mqtt.mqtt import (
     MqttPuback,
     MqttDisconnect)
 from haka_mqtt.scheduler import Scheduler
-
-
-class BufferStr(object):
-    def __init__(self, buf):
-        self.__buf = buf
-
-    def __str__(self):
-        return b2a_hex(self.__buf)
+from haka_mqtt.str_on_demand import HexOnStr
 
 
 class SystemClock():
@@ -75,7 +68,10 @@ class ReactorState(IntEnum):
     stopped = 5
     error = 6
 
-
+# Graceful stop path
+#
+# connected -> stopping -> mute -> stopped
+#
 INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
 
@@ -249,6 +245,7 @@ class Reactor:
                 self.__write_packet(MqttDisconnect())
 
                 if not self.__wbuf:
+                    self.__log.info('Shutting down outgoing stream.')
                     self.socket.shutdown(socket.SHUT_WR)
 
             self.__state = ReactorState.stopping
@@ -281,7 +278,7 @@ class Reactor:
         return packet
 
     def __on_recv_bytes(self, new_bytes):
-        self.__log.debug('Received %d bytes 0x%s', len(new_bytes), BufferStr(new_bytes))
+        self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
 
         while True:
@@ -437,7 +434,7 @@ class Reactor:
         bio = BytesIO()
         packet.encode(bio)
         buf = bio.getvalue()
-        self.__log.debug('Sending %d bytes 0x%s.', len(buf), BufferStr(buf))
+        self.__log.debug('Sending %d bytes 0x%s.', len(buf), HexOnStr(buf))
         self.__wbuf.extend(buf)
         self.__flush()
 

@@ -50,7 +50,7 @@ class SettableClock():
         return self.__time
 
 
-class ReactorProperties:
+class ReactorProperties(object):
     """
     Attributes
     ----------
@@ -58,10 +58,11 @@ class ReactorProperties:
     client_id: str
     clock:
     """
-    socket = None
-    endpoint = None
-    client_id = None
-    clock = SystemClock()
+    def __init__(self):
+        self.socket = None
+        self.endpoint = None
+        self.client_id = None
+        self.clock = SystemClock()
 
 
 @unique

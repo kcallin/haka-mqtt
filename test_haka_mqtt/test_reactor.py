@@ -2,11 +2,13 @@ from __future__ import print_function
 
 import errno
 import logging
+import struct
 import sys
 import unittest
 import socket
 from io import BytesIO
 from select import select
+from struct import Struct
 from unittest import skip
 
 from mock import Mock
@@ -24,6 +26,12 @@ def recv_into(packet, buf):
     src_buf = bio.getvalue()
     buf[0:len(src_buf)] = src_buf
     return len(src_buf)
+
+
+def write_to_buf(packet):
+    bio = BytesIO()
+    packet.encode(bio)
+    return bio.getvalue()
 
 
 class TestReactor(unittest.TestCase):
@@ -60,14 +68,16 @@ class TestReactor(unittest.TestCase):
 
         connack = MqttConnack(False, 0)
         self.socket.recv_into.side_effect = lambda buf: recv_into(connack, buf)
+        self.socket.recv.return_value = write_to_buf(connack)
         self.reactor.read()
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.socket.send.return_value = 18
         self.reactor.subscribe([MqttTopic('hello_topic', 0)])
 
-        connack = MqttSuback(0, [SubscribeResult.qos0])
-        self.socket.recv_into.side_effect = lambda buf: recv_into(connack, buf)
+        suback = MqttSuback(0, [SubscribeResult.qos0])
+        self.socket.recv_into.side_effect = lambda buf: recv_into(suback, buf)
+        self.socket.recv.return_value = write_to_buf(suback)
         self.reactor.read()
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
@@ -119,3 +129,15 @@ class TestIntegrationOfReactor(unittest.TestCase):
             # self.assertEqual(self.reactor.state, ReactorState.connecting)
             i += 1
             print(i)
+
+
+class TestDecode(unittest.TestCase):
+    def test_decode(self):
+        ba = bytearray('a')
+        FIELD_U8 = Struct('>B')
+        try:
+            b, = FIELD_U8.unpack_from(ba)
+        except struct.error as e:
+            print(repr(e))
+
+        ba.extend('cdef')

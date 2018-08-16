@@ -962,6 +962,20 @@ class MqttSuback(MqttPacketBody):
 
 class MqttPublish(MqttPacketBody):
     def __init__(self, packet_id, topic, payload, dupe, qos, retain):
+        """
+
+        Parameters
+        ----------
+        packet_id: int
+            0 <= packet_id <= 2**16 -1
+        topic: str
+        payload: bytes
+        dupe: bool
+        qos: int
+            0 <= qos <= 2
+        retain: bool
+        """
+        assert 0 <= packet_id <= 2**16 - 1
         assert 0 <= qos <= 2
 
         self.packet_id = packet_id
@@ -1040,6 +1054,53 @@ class MqttPublish(MqttPacketBody):
             self.dupe,
             self.qos,
             self.retain)
+
+
+class MqttPuback(MqttPacketBody):
+    def __init__(self, packet_id):
+        self.packet_id = packet_id
+
+        MqttPacketBody.__init__(self, MqttControlPacketType.puback, 0)
+
+    def encode_body(self, f):
+        """
+
+        Parameters
+        ----------
+        f
+
+        Returns
+        -------
+        int
+            Number of bytes written to file.
+        """
+
+        return f.write(FIELD_U16.pack(self.packet_id))
+
+    @classmethod
+    def decode_body(cls, header, buf):
+        """
+
+        Parameters
+        ----------
+        header: MqttFixedHeader
+        buf
+
+        Returns
+        -------
+        (int, MqttSubscribe)
+            Number of bytes written to file.
+        """
+        assert header.packet_type == MqttControlPacketType.puback
+
+        cb = CursorBuf(buf[0:header.remaining_len])
+        packet_id, = cb.unpack(FIELD_U16)
+
+        return cb.num_bytes_consumed, MqttPuback(packet_id)
+
+    def __repr__(self):
+        msg = 'MqttPuback(packet_id={})'
+        return msg.format(self.packet_id)
 
 
 class MqttPubrec(MqttPacketBody):

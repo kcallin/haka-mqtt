@@ -24,7 +24,7 @@ from haka_mqtt.mqtt import (
     MqttPuback,
     MqttDisconnect)
 from haka_mqtt.scheduler import Scheduler
-from haka_mqtt.str_on_demand import HexOnStr
+from haka_mqtt.on_str import HexOnStr
 
 
 class SystemClock():

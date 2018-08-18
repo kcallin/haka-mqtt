@@ -50,12 +50,15 @@ class ReactorProperties(object):
     socket: socket.socket
     client_id: str
     clock:
+    keelaplive_period: int
+        0 <= keepalive_period <= 2*16-1
     """
     def __init__(self):
         self.socket = None
         self.endpoint = None
         self.client_id = None
         self.clock = SystemClock()
+        self.keepalive_period = 10*60
 
 
 @unique
@@ -111,6 +114,7 @@ class Reactor:
         assert properties.client_id is not None
         assert properties.socket is not None
         assert properties.endpoint is not None
+        assert 0 <= properties.keepalive_period <= 2**16-1
 
         self.__log = logging.getLogger('mqtt_reactor')
         self.__wbuf = bytearray()
@@ -118,7 +122,7 @@ class Reactor:
 
         self.__client_id = properties.client_id
         self.__clock = properties.clock
-        self.__keepalive_period = 10*60
+        self.__keepalive_period = properties.keepalive_period
         self.__keepalive_deadline = None
         self.__keepalive_timeout_deadline = None
         self.__last_poll_instant = None

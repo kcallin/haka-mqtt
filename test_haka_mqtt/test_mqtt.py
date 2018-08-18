@@ -1,5 +1,7 @@
+import struct
 import unittest
 from io import BytesIO
+from struct import Struct
 
 from haka_mqtt import mqtt
 from binascii import a2b_hex
@@ -221,3 +223,15 @@ class TestDisconnect(unittest.TestCase):
         buf = bytearray(bio.getvalue())
 
         recovered = mqtt.MqttDisconnect.decode(buf)
+
+
+class TestDecode(unittest.TestCase):
+    def test_decode(self):
+        ba = bytearray('a')
+        FIELD_U8 = Struct('>B')
+        try:
+            b, = FIELD_U8.unpack_from(ba)
+        except struct.error as e:
+            print(repr(e))
+
+        ba.extend('cdef')

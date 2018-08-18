@@ -12,11 +12,12 @@ from struct import Struct
 from mock import Mock
 
 from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe, MqttPublish, \
-    MqttPuback
+    MqttPuback, MqttPingreq
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
-    ReactorState)
+    ReactorState, KeepaliveTimeoutReactorError)
+from haka_mqtt.scheduler import Scheduler
 
 
 def buffer_packet(packet):
@@ -32,12 +33,14 @@ class TestReactor(unittest.TestCase):
         self.endpoint = ('test.mosquitto.org', 1883)
         self.client_id = 'client'
         self.keepalive_period = 10*60
+        self.scheduler = Scheduler()
 
         p = ReactorProperties()
         p.socket = self.socket
         p.endpoint = self.endpoint
         p.client_id = self.client_id
         p.keepalive_period = self.keepalive_period
+        p.scheduler = self.scheduler
 
         self.on_publish = Mock()
 
@@ -98,7 +101,7 @@ class TestReactor(unittest.TestCase):
 
         return bytearray(buf)
 
-    def test_start(self):
+    def start_to_connect(self):
         self.assertEqual(ReactorState.init, self.reactor.state)
 
         self.socket.connect.side_effect = socket.gaierror(errno.EINPROGRESS, '')
@@ -111,6 +114,21 @@ class TestReactor(unittest.TestCase):
         self.socket.getsockopt.return_value = 0
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
+
+    def test_connack_keepalive_timeout(self):
+        self.start_to_connect()
+        p = MqttPingreq()
+        self.set_send_packet_result(p)
+        self.scheduler.poll(self.keepalive_period)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        self.scheduler.poll(self.keepalive_period * 0.5)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorError())
+
+    def test_start(self):
+        self.start_to_connect()
 
         connack = MqttConnack(False, 0)
         self.set_recv_packet_result_then_read(connack)

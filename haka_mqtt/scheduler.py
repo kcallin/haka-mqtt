@@ -23,7 +23,7 @@ class _DeadlineEntry(object):
         if not self.expired:
             self.expired = True
             idx = bisect_left(self.queue, self)
-            while True:
+            while idx < len(self.queue):
                 if id(self.queue[idx]) == id(self):
                     del self.queue[idx]
                     break

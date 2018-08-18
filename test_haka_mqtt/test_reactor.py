@@ -11,7 +11,8 @@ from struct import Struct
 
 from mock import Mock
 
-from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe
+from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe, MqttPublish, \
+    MqttPuback
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -38,8 +39,11 @@ class TestReactor(unittest.TestCase):
         p.client_id = self.client_id
         p.keepalive_period = self.keepalive_period
 
+        self.on_publish = Mock()
+
         self.properties = p
         self.reactor = Reactor(p)
+        self.reactor.on_publish = self.on_publish
 
     def tearDown(self):
         pass
@@ -112,11 +116,29 @@ class TestReactor(unittest.TestCase):
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        p = MqttSubscribe(0, [MqttTopic('hello_topic', 0)])
+        TOPIC = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(TOPIC, 0)])
         self.set_send_packet_result(p)
         self.reactor.subscribe(p.topics)
         self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
 
-        suback = MqttSuback(0, [SubscribeResult.qos0])
+        suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
         self.set_recv_packet_result_then_read(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        p = MqttPublish(1, TOPIC, 'outgoing', False, 0, False)
+        self.set_send_packet_result(p)
+        self.reactor.publish(p.topic, p.payload, p.qos)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        p = MqttPuback(p.packet_id)
+        self.set_recv_packet_result_then_read(p)
+
+        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
+        puback = MqttPuback(p.packet_id)
+        self.set_send_packet_result(puback)
+        self.set_recv_packet_result_then_read(publish)
+        self.on_publish.assert_called_once_with(self.reactor, publish)
+        self.socket.send.assert_called_once_with(buffer_packet(puback))

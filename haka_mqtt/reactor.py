@@ -204,7 +204,6 @@ class Reactor:
 
     def publish(self, topic, payload, qos, retain=False):
         """
-
         Parameters
         ----------
         topic: str
@@ -212,6 +211,10 @@ class Reactor:
         qos: int
             0 <= qos <= 2
         retain: False
+
+        Return
+        ------
+        MqttPublish
         """
         self.__assert_state_rules()
         assert self.state is ReactorState.connected
@@ -221,6 +224,8 @@ class Reactor:
         self.__write_packet(p)
 
         self.__assert_state_rules()
+
+        return p
 
     def start(self):
         self.__assert_state_rules()

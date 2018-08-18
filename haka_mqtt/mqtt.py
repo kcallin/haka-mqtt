@@ -288,6 +288,13 @@ class MqttFixedHeader(object):
 
         return num_bytes_consumed
 
+    def __eq__(self, other):
+        return (
+            self.packet_type == other.packet_type
+            and self.flags == other.flags
+            and self.remaining_len == other.remaining_len
+        )
+
 
 class MqttWill(object):
     def __init__(self, qos, topic, message, retain):

@@ -208,10 +208,16 @@ class MqttFixedHeader(object):
 
     See 2.2 Fixed Header: 233
 
-             7 6 5 4 3 2 1 0
-    byte 1  |-------|-------|
-              cntrl  flags
-    byte 2  | remaining length|
+    +--------+-------------------------------+
+    |        |              Bit              |
+    |        +---+---+---+---+---+---+---+---+
+    |        | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+    +========+===+===+===+===+===+===+===+===+
+    | byte 1 | control type  |    flags      |
+    +--------+---------------+---------------+
+    | byte 2 |      remaining length         |
+    +--------+-------------------------------+
+
     """
     def __init__(self, packet_type, flags, remaining_len):
         """

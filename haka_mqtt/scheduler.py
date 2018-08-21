@@ -28,7 +28,7 @@ class _DeadlineEntry(object):
                     del self.queue[idx]
                     break
                 elif self.queue[idx] > self:
-                    assert False, 'Terrible programming error.'
+                    raise AssertionError()
                 else:
                     idx += 1
 

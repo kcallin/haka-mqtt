@@ -12,14 +12,6 @@ haka\_mqtt.clock module
     :undoc-members:
     :show-inheritance:
 
-haka\_mqtt.main module
-----------------------
-
-.. automodule:: haka_mqtt.main
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 haka\_mqtt.mqtt module
 ----------------------
 

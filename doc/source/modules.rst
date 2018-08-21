@@ -5,4 +5,3 @@ haka-mqtt
    :maxdepth: 4
 
    haka_mqtt
-   setup

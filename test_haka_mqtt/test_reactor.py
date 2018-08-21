@@ -40,6 +40,7 @@ class TestReactor(unittest.TestCase):
         p.client_id = self.client_id
         p.keepalive_period = self.keepalive_period
         p.scheduler = self.scheduler
+        p.clean_session = True
 
         self.on_publish = Mock()
 
@@ -48,7 +49,6 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_publish = self.on_publish
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
-
 
     def tearDown(self):
         self.assertEqual(0, len(self.scheduler))
@@ -135,6 +135,13 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorError())
 
+    def test_connack_unexpected_session_present(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(True, 0)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
     def test_start(self):
         self.start_to_connect()
 
@@ -204,3 +211,22 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.set_recv_result(0)
         self.reactor.read()
         self.assertEqual(self.reactor.state, ReactorState.error)
+
+    def test_connected(self):
+        self.assertEqual(self.reactor.state, ReactorState.init)
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+
+        self.set_recv_packet_result_then_read(MqttConnack(False, 0))
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.set_recv_result(0)
+        self.reactor.read()

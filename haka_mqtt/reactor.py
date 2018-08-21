@@ -49,8 +49,9 @@ class ReactorProperties(object):
     socket: socket.socket
     client_id: str
     clock:
-    keelaplive_period: int
+    keepalive_period: int
         0 <= keepalive_period <= 2*16-1
+    clean_session: bool
     """
     def __init__(self):
         self.socket = None
@@ -59,6 +60,7 @@ class ReactorProperties(object):
         self.clock = SystemClock()
         self.keepalive_period = 10*60
         self.scheduler = None
+        self.clean_session = True
 
 
 @unique
@@ -80,6 +82,14 @@ INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
 class ReactorError:
     pass
+
+
+class ProtocolViolationReactorError(ReactorError):
+    def __init__(self, desc):
+        self.description = desc
+
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.description)
 
 
 class KeepaliveTimeoutReactorError(ReactorError):
@@ -154,6 +164,7 @@ class Reactor:
         assert properties.endpoint is not None
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
+        assert isinstance(properties.clean_session, bool)
 
         self.__log = logging.getLogger('mqtt_reactor')
         self.__wbuf = bytearray()
@@ -165,6 +176,7 @@ class Reactor:
         self.__keepalive_due_deadline = None
         self.__keepalive_abort_deadline = None
         self.__last_poll_instant = None
+        self.__clean_session = properties.clean_session
 
         self.socket = properties.socket
         self.endpoint = properties.endpoint
@@ -181,6 +193,10 @@ class Reactor:
         self.on_suback = None
         self.on_connack = None
         self.on_publish = None
+
+    @property
+    def clean_session(self):
+        return self.__clean_session
 
     @property
     def client_id(self):
@@ -381,9 +397,22 @@ class Reactor:
         self.__assert_state_rules()
 
     def __on_connack(self, connack):
+        """
+
+        Parameters
+        ----------
+        connack: MqttConnack
+        """
         if self.state is ReactorState.connack:
             self.__log.info('Received %s.', repr(connack))
             self.__state = ReactorState.connected
+
+            if connack.session_present:
+                if self.clean_session:
+                    # [MQTT-3.2.2-1]
+                    e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
+                    self.__log.error(e.description)
+                    self.__abort(e)
 
             if self.on_connack is not None:
                 self.on_connack(self, connack)
@@ -505,7 +534,7 @@ class Reactor:
         self.__keepalive_abort_deadline = self.__scheduler.add(int(1.5*self.keepalive_period), self.__keepalive_abort_timeout)
 
         self.__state = ReactorState.connack
-        self.__write_packet(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.__write_packet(MqttConnect(self.client_id, self.clean_session, self.keepalive_period))
 
     def __flush(self):
         while self.__wbuf:

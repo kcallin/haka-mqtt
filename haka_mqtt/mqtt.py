@@ -1064,7 +1064,7 @@ class MqttPublish(MqttPacketBody):
         msg = 'MqttPublish(packet_id={}, topic={}, payload=0x{}, dupe={}, qos={}, retain={})'
         return msg.format(
             self.packet_id,
-            self.topic,
+            repr(self.topic),
             b2a_hex(self.payload),
             self.dupe,
             self.qos,

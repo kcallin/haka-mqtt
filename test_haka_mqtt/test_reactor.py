@@ -43,10 +43,12 @@ class TestReactor(unittest.TestCase):
         p.clean_session = True
 
         self.on_publish = Mock()
+        self.on_connack = Mock()
 
         self.properties = p
         self.reactor = Reactor(p)
         self.reactor.on_publish = self.on_publish
+        self.reactor.on_connack = self.on_connack
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
 
@@ -141,6 +143,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         connack = MqttConnack(True, 0)
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.error)
+        self.on_connack.assert_not_called()
 
     def test_start(self):
         self.start_to_connect()

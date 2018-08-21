@@ -407,14 +407,12 @@ class Reactor:
             self.__log.info('Received %s.', repr(connack))
             self.__state = ReactorState.connected
 
-            if connack.session_present:
-                if self.clean_session:
-                    # [MQTT-3.2.2-1]
-                    e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
-                    self.__log.error(e.description)
-                    self.__abort(e)
-
-            if self.on_connack is not None:
+            if connack.session_present and self.clean_session:
+                # [MQTT-3.2.2-1]
+                e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
+                self.__log.error(e.description)
+                self.__abort(e)
+            elif self.on_connack is not None:
                 self.on_connack(self, connack)
         else:
             self.__abort(DecodeReactorError('Received connack at an inappropriate time.'))

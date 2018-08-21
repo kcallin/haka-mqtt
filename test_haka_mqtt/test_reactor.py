@@ -108,7 +108,7 @@ class TestReactor(unittest.TestCase):
             ec = errno.EWOULDBLOCK
             self.socket.send.side_effect = [1, socket.error(ec, os.strerror(ec))]
             self.reactor.write()
-            self.assertEqual(self.socket.send.call_count, 2)
+            self.socket.send.assert_called_once()
             self.socket.send.reset_mock()
             self.assertTrue(self.reactor.want_write())
             # TODO: Reactor wants read all the time it is writing!
@@ -208,7 +208,6 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
             self.socket.send.side_effect = result
         else:
             self.socket.send.return_value = result
-
 
     def test_conn_and_connack_dripfeed(self):
         self.assertEqual(ReactorState.init, self.reactor.state)

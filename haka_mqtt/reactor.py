@@ -535,14 +535,14 @@ class Reactor:
         self.__write_packet(MqttConnect(self.client_id, self.clean_session, self.keepalive_period))
 
     def __flush(self):
-        while self.__wbuf:
+        if self.__wbuf:
             try:
                 num_bytes_written = self.socket.send(self.__wbuf)
                 self.__wbuf = bytearray(self.__wbuf[num_bytes_written:])
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
-                    break
+                    pass
                 elif e.errno == errno.EPIPE:
                     self.__log.error("Remote unexpectedly closed the connection (errno=%d); Aborting.", e.errno)
                     self.__abort(SocketError(e.errno))

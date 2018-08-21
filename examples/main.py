@@ -2,6 +2,7 @@ import logging
 import sys
 import socket
 from select import select
+from time import time
 
 from haka_mqtt.mqtt import MqttTopic
 from haka_mqtt.reactor import ReactorProperties, SystemClock, Reactor, ReactorState
@@ -75,7 +76,6 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(0)
     endpoint = ('test.mosquitto.org', 1883)
-    endpoint = ('test.mosquitto.org', 1884)
     clock = SystemClock()
 
     scheduler = Scheduler()
@@ -94,7 +94,19 @@ def main():
     reactor.on_publish = on_publish
     reactor.start()
 
+    log = logging.getLogger()
+
+    last_poll_time = time()
+    last_poll_duration = 0.
+    select_timeout = scheduler.remaining()
     while reactor.state not in (ReactorState.stopped, ReactorState.error):
+        #
+        #                                 |---------poll_period-------------|------|
+        #                                 |--poll--|-----select_period------|
+        #                                 |  dur   |
+        #  ... ----|--------|-------------|--------|---------|--------------|------|---- ...
+        #            select   handle i/o     poll     select    handle i/o    poll
+        #
         if reactor.want_read():
             rlist = [reactor.socket]
         else:
@@ -105,10 +117,7 @@ def main():
         else:
             wlist = []
 
-        timeout = scheduler.remaining()
-        rlist, wlist, xlist = select(rlist, wlist, [], timeout)
-        if timeout:
-            scheduler.poll(timeout)
+        rlist, wlist, xlist = select(rlist, wlist, [], select_timeout)
 
         for r in rlist:
             assert r == reactor.socket
@@ -118,6 +127,19 @@ def main():
             assert w == reactor.socket
             reactor.write()
 
+        poll_time = time()
+        scheduler.poll(poll_time - last_poll_time)
+        last_poll_time = poll_time
+
+        select_timeout = scheduler.remaining()
+        if select_timeout is not None:
+            last_poll_duration = time() - last_poll_time
+            select_timeout -= last_poll_duration
+
+
+
     print(repr(reactor.error))
 
-main()
+
+if __name__ == '__main__':
+    sys.exit(main())

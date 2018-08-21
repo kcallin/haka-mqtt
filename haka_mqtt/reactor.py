@@ -598,9 +598,6 @@ class Reactor:
 
         self.__abort(KeepaliveTimeoutReactorError())
 
-    def remaining(self):
-        return self.__scheduler.remaining()
-
     def poll(self):
         self.__assert_state_rules()
 

@@ -22,16 +22,16 @@ from haka_mqtt.mqtt import (
     DecodeError,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect, MqttPingreq)
+    MqttDisconnect, MqttPingreq, MqttPingresp)
 from haka_mqtt.on_str import HexOnStr
 
 
-class SystemClock():
+class SystemClock(object):
     def time(self):
         return time()
 
 
-class SettableClock():
+class SettableClock(object):
     def __init__(self):
         self.__time = 0
 
@@ -72,6 +72,7 @@ class ReactorState(IntEnum):
     stopping = 4
     stopped = 5
     error = 6
+
 
 # Graceful stop path
 #
@@ -164,6 +165,7 @@ class Reactor:
         assert properties.endpoint is not None
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
+        assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
 
         self.__log = logging.getLogger('mqtt_reactor')
@@ -301,6 +303,7 @@ class Reactor:
                 # Connection in progress.
                 self.__log.info('Connecting.')
             else:
+                self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
                 self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
@@ -315,6 +318,9 @@ class Reactor:
                 if not self.__wbuf:
                     self.__log.info('Shutting down outgoing stream.')
                     self.socket.shutdown(socket.SHUT_WR)
+
+                # Stop keepalive messages.
+                # TODO: What if remote socket takes forever to close?
 
             self.__state = ReactorState.stopping
         else:
@@ -348,11 +354,13 @@ class Reactor:
     def __on_recv_bytes(self, new_bytes):
         assert len(new_bytes) > 0
 
-        self.__keepalive_due_deadline.cancel()
+        if self.__keepalive_due_deadline is not None:
+            self.__keepalive_due_deadline.cancel()
+            self.__keepalive_due_deadline = None
         self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
         self.__keepalive_abort_deadline.cancel()
-        self.__keepalive_abort_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_abort_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period, self.__keepalive_abort_timeout)
 
         self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
@@ -369,8 +377,12 @@ class Reactor:
                     self.__on_puback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
                 elif header.packet_type == MqttControlPacketType.publish:
                     self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
+                elif header.packet_type == MqttControlPacketType.pingresp:
+                    self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
                 else:
-                    self.__abort(DecodeReactorError('Received unsupported message type {}.'.format(header.packet_type)))
+                    m = 'Received unsupported message type {}.'.format(header.packet_type)
+                    self.__log.error(m)
+                    self.__abort(DecodeReactorError(m))
 
     def read(self):
         self.__assert_state_rules()
@@ -386,12 +398,14 @@ class Reactor:
             # Not enough header bytes.
             pass
         except DecodeError as e:
+            self.__log.error('Error decoding message (%s)', str(e))
             self.__abort(DecodeReactorError(str(e)))
         except socket.error as e:
             if e.errno == errno.EWOULDBLOCK:
                 # No write space ready.
                 pass
             else:
+                self.__log.error('While reading socket, %s (errno=%d).  Aborting.', e.strerror, e.errno)
                 self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
@@ -415,7 +429,9 @@ class Reactor:
             elif self.on_connack is not None:
                 self.on_connack(self, connack)
         else:
-            self.__abort(DecodeReactorError('Received connack at an inappropriate time.'))
+            m = 'Received connack at an inappropriate time.'
+            self.__log.error(m)
+            self.__abort(DecodeReactorError(m))
 
     def __on_publish(self, publish):
         """
@@ -499,6 +515,19 @@ class Reactor:
         else:
             assert False, 'Received MqttPuback at an inappropriate time.'
 
+    def __on_pingresp(self, pingresp):
+        """
+
+        Parameters
+        ----------
+        pingresp: MqttPingresp
+
+        """
+        if self.state is ReactorState.connected:
+            self.__log.info('Received %s.', repr(pingresp))
+        else:
+            assert False, 'Received MqttSuback at an inappropriate time.'
+
     def __on_muted_remote(self):
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
@@ -510,6 +539,14 @@ class Reactor:
                 self.__log.warning('While stopping remote closed stream before consuming bytes.')
             else:
                 self.__log.info('Remote gracefully closed stream.')
+
+            if self.__keepalive_due_deadline is not None:
+                self.__keepalive_due_deadline.cancel()
+                self.__keepalive_due_deadline = None
+
+            if self.__keepalive_abort_deadline is not None:
+                self.__keepalive_abort_deadline.cancel()
+                self.__keepalive_abort_deadline = None
 
             self.socket.close()
             self.__state = ReactorState.stopped
@@ -529,7 +566,7 @@ class Reactor:
         assert self.state == ReactorState.connecting
         self.__log.info('Connected.')
         self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
-        self.__keepalive_abort_deadline = self.__scheduler.add(int(1.5*self.keepalive_period), self.__keepalive_abort_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period, self.__keepalive_abort_timeout)
 
         self.__state = ReactorState.connack
         self.__write_packet(MqttConnect(self.client_id, self.clean_session, self.keepalive_period))
@@ -579,7 +616,9 @@ class Reactor:
         self.__error = e
 
     def __keepalive_due_timeout(self):
+        self.__assert_state_rules()
         assert self.__keepalive_due_deadline is not None
+
         assert self.state in (
             ReactorState.connack,
             ReactorState.connected,
@@ -587,9 +626,16 @@ class Reactor:
         )
 
         self.__write_packet(MqttPingreq())
+        self.__keepalive_due_deadline = None
+
+        self.__assert_state_rules()
 
     def __keepalive_abort_timeout(self):
-        assert self.__keepalive_due_deadline is not None
+        self.__assert_state_rules()
+
+        assert self.__keepalive_due_deadline is None
+        assert self.__keepalive_abort_deadline is not None
+
         assert self.state in (
             ReactorState.connack,
             ReactorState.connected,
@@ -598,17 +644,6 @@ class Reactor:
 
         self.__abort(KeepaliveTimeoutReactorError())
 
-    def poll(self):
-        self.__assert_state_rules()
-
-        now = self.__clock.time()
-        if self.last_poll_instant is None:
-            duration_since_last_poll = 0
-        else:
-            duration_since_last_poll = now - self.last_poll_instant
-        self.__last_poll_instant = now
-
-        self.__scheduler.poll(duration_since_last_poll)
         self.__assert_state_rules()
 
     def write(self):

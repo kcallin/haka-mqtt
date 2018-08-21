@@ -93,13 +93,46 @@ class SocketError(ReactorError):
     ----------
     error: errno
     """
-    def __init__(self, errno):
+    def __init__(self, errno_val):
         """
         Parameters
         ----------
-        errno: int
+        errno_val: int
         """
-        self.errno = errno
+        assert errno_val in errno.errorcode
+
+        self.errno = errno_val
+
+    def __repr__(self):
+        return 'SocketError({} ({}))'.format(errno.errorcode[self.errno], self.errno)
+
+
+class AddressingReactorError(ReactorError):
+    """
+    Attributes
+    ----------
+    error: errno
+    """
+    def __init__(self, gaierror):
+        """
+        Parameters
+        ----------
+        errno: socket.gaierror
+        """
+        assert isinstance(gaierror, socket.gaierror)
+        self.__errno = gaierror.errno
+        self.__desc = gaierror.strerror
+
+    @property
+    def errno(self):
+        return self.__errno
+
+    @property
+    def description(self):
+        return self.__desc
+
+    def __repr__(self):
+        return '{}({} ({}))'.format(self.__class__.__name__, self.errno, self.description)
 
 
 class DecodeReactorError(ReactorError):
@@ -119,6 +152,7 @@ class Reactor:
         assert properties.client_id is not None
         assert properties.socket is not None
         assert properties.endpoint is not None
+        assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
 
         self.__log = logging.getLogger('mqtt_reactor')
@@ -243,12 +277,15 @@ class Reactor:
             self.__state = ReactorState.connecting
             self.socket.connect(self.endpoint)
             self.__on_connect()
+        except socket.gaierror as e:
+            self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
+            self.__abort(AddressingReactorError(e))
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:
                 # Connection in progress.
                 self.__log.info('Connecting.')
             else:
-                self.__abort(ReactorState(e))
+                self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
 
@@ -339,7 +376,7 @@ class Reactor:
                 # No write space ready.
                 pass
             else:
-                self.__abort(SocketError(e))
+                self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
 
@@ -463,11 +500,12 @@ class Reactor:
 
     def __on_connect(self):
         assert self.state == ReactorState.connecting
+        self.__log.info('Connected.')
+        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(int(1.5*self.keepalive_period), self.__keepalive_abort_timeout)
+
         self.__state = ReactorState.connack
         self.__write_packet(MqttConnect(self.client_id, True, self.keepalive_period))
-
-        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
-        self.__keepalive_abort_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_abort_timeout)
 
     def __flush(self):
         while self.__wbuf:
@@ -478,16 +516,26 @@ class Reactor:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
                     pass
+                elif e.errno == errno.EPIPE:
+                    self.__log.error("Remote unexpectedly closed the connection (errno=%d); Aborting.", e.errno)
+                    self.__abort(SocketError(e.errno))
                 else:
-                    self.__abort(SocketError(e))
+                    self.__log.error("%s (errno=%d); Aborting.", e.strerror, e.errno)
+                    self.__abort(SocketError(e.errno))
 
     def __terminate(self):
         if self.state in (ReactorState.connecting,
                           ReactorState.connack,
                           ReactorState.connected,
                           ReactorState.stopping):
-            self.socket.shutdown(socket.SHUT_RDWR)
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
             self.socket.close()
+
+        self.__wbuf = bytearray()
+        self.__rbuf = bytearray()
 
         if self.__keepalive_abort_deadline is not None:
             self.__keepalive_abort_deadline.cancel()
@@ -549,10 +597,9 @@ class Reactor:
             if e == 0:
                 self.__on_connect()
             elif errno.EINPROGRESS:
-                self.__log.info('Connecting.')
+                pass
             else:
-                self.__state = ReactorState.error
-                self.__error = SocketError(e)
+                self.__abort(SocketError(e.errno))
         elif self.state == ReactorState.connack:
             self.__flush()
         elif self.state == ReactorState.closed:

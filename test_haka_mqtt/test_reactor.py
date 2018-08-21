@@ -2,12 +2,11 @@ from __future__ import print_function
 
 import errno
 import logging
-import struct
+import os
 import sys
 import unittest
 import socket
 from io import BytesIO
-from struct import Struct
 
 from mock import Mock
 
@@ -47,15 +46,22 @@ class TestReactor(unittest.TestCase):
         self.properties = p
         self.reactor = Reactor(p)
         self.reactor.on_publish = self.on_publish
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.log.info('%s setUp()', self._testMethodName)
+
 
     def tearDown(self):
-        pass
+        self.assertEqual(0, len(self.scheduler))
+        self.log.info('%s tearDown()', self._testMethodName)
 
-    def set_recv_packet_result(self, p):
-        self.socket.recv.return_value = buffer_packet(p)
+    def set_recv_result(self, rv):
+        if isinstance(rv, Exception):
+            self.socket.recv.side_effect = rv
+        else:
+            self.socket.recv.return_value = rv
 
     def set_recv_packet_result_then_read(self, p):
-        self.set_recv_packet_result(p)
+        self.socket.recv.return_value = buffer_packet(p)
         self.reactor.read()
         self.socket.recv.assert_called_once()
         self.socket.recv.reset_mock()
@@ -104,7 +110,7 @@ class TestReactor(unittest.TestCase):
     def start_to_connect(self):
         self.assertEqual(ReactorState.init, self.reactor.state)
 
-        self.socket.connect.side_effect = socket.gaierror(errno.EINPROGRESS, '')
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
         self.socket.connect.assert_called_once_with(self.endpoint)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
@@ -115,6 +121,8 @@ class TestReactor(unittest.TestCase):
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
+
+class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_connack_keepalive_timeout(self):
         self.start_to_connect()
         p = MqttPingreq()
@@ -159,4 +167,40 @@ class TestReactor(unittest.TestCase):
         self.set_send_packet_result(puback)
         self.set_recv_packet_result_then_read(publish)
         self.on_publish.assert_called_once_with(self.reactor, publish)
+        self.on_publish.reset_mock()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
+
+        self.reactor.terminate()
+
+
+class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
+    def test_connect(self):
+        self.assertEqual(self.reactor.state, ReactorState.init)
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.set_send_result(socket.error(errno.EPIPE, os.strerror(errno.EPIPE)))
+        self.reactor.write()
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
+    def test_connack(self):
+        self.assertEqual(self.reactor.state, ReactorState.init)
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+
+        self.set_recv_result(0)
+        self.reactor.read()
+        self.assertEqual(self.reactor.state, ReactorState.error)

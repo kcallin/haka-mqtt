@@ -23,12 +23,12 @@ class TestScheduler(unittest.TestCase):
 
         t0 = Target()
         t1 = Target()
-        t2 = Target()
 
         d0 = s.add(0, t0)
         self.assertEqual(1, len(s))
         self.assertEqual(0, s.remaining())
         self.assertFalse(t0.set)
+        self.assertIsNotNone(d0)
 
         s.poll(0)
         self.assertEqual(0, len(s))
@@ -40,6 +40,7 @@ class TestScheduler(unittest.TestCase):
         d0 = s.add(3, t0)
         self.assertEqual(2, len(s))
         self.assertEqual(s.remaining(), 3)
+        self.assertIsNotNone(d0)
 
         s.poll(s.remaining())
         self.assertTrue(t0.set)
@@ -53,4 +54,26 @@ class TestScheduler(unittest.TestCase):
         self.assertIsNone(s.remaining())
         self.assertEqual(0, len(s))
         self.assertTrue(d1.expired())
+
+    def test_scheduler_0(self):
+        s = Scheduler()
+        self.assertIsNone(s.remaining())
+        self.assertEqual(0, len(s))
+
+        s.poll(0)
+        self.assertIsNone(s.remaining())
+        self.assertEqual(0, len(s))
+
+        t0 = Target()
+        t1 = Target()
+
+        d0 = s.add(0, t0)
+        self.assertEqual(1, len(s))
+        self.assertEqual(0, s.remaining())
+        self.assertFalse(t0.set)
+        self.assertIsNotNone(d0)
+        self.assertFalse(d0.expired())
+
+        s.poll(s.remaining())
+        self.assertTrue(d0.expired())
 

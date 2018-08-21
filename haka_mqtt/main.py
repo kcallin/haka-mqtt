@@ -5,6 +5,7 @@ from select import select
 
 from haka_mqtt.mqtt import MqttTopic
 from haka_mqtt.reactor import ReactorProperties, SystemClock, Reactor, ReactorState
+from haka_mqtt.scheduler import Scheduler
 
 TOPIC = 'bubbles'
 count = 0
@@ -74,13 +75,17 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(0)
     endpoint = ('test.mosquitto.org', 1883)
+    endpoint = ('test.mosquitto.org', 1884)
     clock = SystemClock()
 
+    scheduler = Scheduler()
     p = ReactorProperties()
     p.socket = sock
     p.endpoint = endpoint
     p.clock = clock
+    p.keepalive_period = 20
     p.client_id = 'bobby'
+    p.scheduler = scheduler
 
     reactor = Reactor(p)
     reactor.on_suback = on_suback
@@ -100,8 +105,10 @@ def main():
         else:
             wlist = []
 
-        timeout = reactor.remaining()
+        timeout = scheduler.remaining()
         rlist, wlist, xlist = select(rlist, wlist, [], timeout)
+        if timeout:
+            scheduler.poll(timeout)
 
         for r in rlist:
             assert r == reactor.socket
@@ -110,5 +117,7 @@ def main():
         for w in wlist:
             assert w == reactor.socket
             reactor.write()
+
+    print(repr(reactor.error))
 
 main()

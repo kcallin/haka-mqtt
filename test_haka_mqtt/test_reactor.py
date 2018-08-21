@@ -102,6 +102,27 @@ class TestReactor(unittest.TestCase):
         self.socket.send.assert_called_once_with(buf)
         self.socket.send.reset_mock()
 
+    def set_send_packet_drip_and_write(self, p):
+        buf = buffer_packet(p)
+        for b in buf[0:-1]:
+            ec = errno.EWOULDBLOCK
+            self.socket.send.side_effect = [1, socket.error(ec, os.strerror(ec))]
+            self.reactor.write()
+            self.assertEqual(self.socket.send.call_count, 2)
+            self.socket.send.reset_mock()
+            self.assertTrue(self.reactor.want_write())
+            # TODO: Reactor wants read all the time it is writing!
+            # Is this okay?
+            # self.assertFalse(self.reactor.want_read())
+
+        self.socket.send.side_effect = None
+        self.socket.send.return_value = 1
+        self.reactor.write()
+
+        self.socket.send.assert_called_once()
+        self.socket.send.reset_mock()
+        self.assertFalse(self.reactor.want_write())
+
     def encode_packet_to_buf(self, p):
         with BytesIO() as f:
             p.encode(f)
@@ -200,26 +221,8 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
 
         self.socket.getsockopt.return_value = 0
-
-        buf = buffer_packet(MqttConnect(self.client_id, True, self.keepalive_period))
-        for b in buf[0:-1]:
-            ec = errno.EWOULDBLOCK
-            self.socket.send.side_effect = [1, socket.error(ec, os.strerror(ec))]
-            self.reactor.write()
-            self.assertEqual(self.socket.send.call_count, 2)
-            self.socket.send.reset_mock()
-            self.assertEqual(self.reactor.state, ReactorState.connack)
-            self.assertTrue(self.reactor.want_write())
-            # TODO: Reactor wants read all the time it is writing!
-            # Is this okay?
-            # self.assertFalse(self.reactor.want_read())
-        self.socket.send.side_effect = None
-        self.socket.send.return_value = 1
-        self.reactor.write()
-        self.socket.send.assert_called_once()
-        self.socket.send.reset_mock()
-        self.assertFalse(self.reactor.want_write())
-        self.assertTrue(self.reactor.want_read())
+        self.set_send_packet_drip_and_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
 
         connack = MqttConnack(False, 0)
         self.set_recv_packet_result_then_read(connack)

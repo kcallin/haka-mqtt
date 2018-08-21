@@ -182,6 +182,79 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
         self.reactor.terminate()
 
+    def set_single_byte_send(self, result):
+        if isinstance(result, Exception):
+            self.socket.send.side_effect = result
+        else:
+            self.socket.send.return_value = result
+
+
+    def test_conn_and_connack_dripfeed(self):
+        self.assertEqual(ReactorState.init, self.reactor.state)
+
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+
+        buf = buffer_packet(MqttConnect(self.client_id, True, self.keepalive_period))
+        for b in buf[0:-1]:
+            ec = errno.EWOULDBLOCK
+            self.socket.send.side_effect = [1, socket.error(ec, os.strerror(ec))]
+            self.reactor.write()
+            self.assertEqual(self.socket.send.call_count, 2)
+            self.socket.send.reset_mock()
+            self.assertEqual(self.reactor.state, ReactorState.connack)
+            self.assertTrue(self.reactor.want_write())
+            # TODO: Reactor wants read all the time it is writing!
+            # Is this okay?
+            # self.assertFalse(self.reactor.want_read())
+        self.socket.send.side_effect = None
+        self.socket.send.return_value = 1
+        self.reactor.write()
+        self.socket.send.assert_called_once()
+        self.socket.send.reset_mock()
+        self.assertFalse(self.reactor.want_write())
+        self.assertTrue(self.reactor.want_read())
+
+        connack = MqttConnack(False, 0)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        TOPIC = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(TOPIC, 0)])
+        self.set_send_packet_result(p)
+        self.reactor.subscribe(p.topics)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
+        self.set_recv_packet_result_then_read(suback)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        p = MqttPublish(1, TOPIC, 'outgoing', False, 0, False)
+        self.set_send_packet_result(p)
+        self.reactor.publish(p.topic, p.payload, p.qos)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        p = MqttPuback(p.packet_id)
+        self.set_recv_packet_result_then_read(p)
+
+        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
+        puback = MqttPuback(p.packet_id)
+        self.set_send_packet_result(puback)
+        self.set_recv_packet_result_then_read(publish)
+        self.on_publish.assert_called_once_with(self.reactor, publish)
+        self.on_publish.reset_mock()
+        self.socket.send.assert_called_once_with(buffer_packet(puback))
+
+        self.reactor.terminate()
+
 
 class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
     def test_connect(self):

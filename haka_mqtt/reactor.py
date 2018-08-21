@@ -542,7 +542,7 @@ class Reactor:
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
-                    pass
+                    break
                 elif e.errno == errno.EPIPE:
                     self.__log.error("Remote unexpectedly closed the connection (errno=%d); Aborting.", e.errno)
                     self.__abort(SocketError(e.errno))

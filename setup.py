@@ -11,6 +11,7 @@ setup(
     ],
     author="Keegan Callin",
     author_email="kc@kcallin.net",
+    description="Weapons grade MQTT client.",
 )
 
 """
@@ -27,7 +28,6 @@ setup(
     },
 
     # metadata to display on PyPI
-    description="This is an Example Package",
     license="PSF",
     keywords="hello world example examples",
     url="http://example.com/HelloWorld/",   # project home page, if any

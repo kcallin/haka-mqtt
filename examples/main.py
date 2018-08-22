@@ -141,6 +141,9 @@ def main():
             last_poll_duration = time() - last_poll_time
             select_timeout -= last_poll_duration
 
+        if select_timeout < 0:
+            select_timeout = 0
+
     print(repr(reactor.error))
 
 

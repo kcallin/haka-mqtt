@@ -97,7 +97,6 @@ def main():
     log = logging.getLogger()
 
     last_poll_time = time()
-    last_poll_duration = 0.
     select_timeout = scheduler.remaining()
     while reactor.state not in (ReactorState.stopped, ReactorState.error):
         #
@@ -128,15 +127,19 @@ def main():
             reactor.write()
 
         poll_time = time()
-        scheduler.poll(poll_time - last_poll_time)
+        time_since_last_poll = poll_time - last_poll_time
+        if scheduler.remaining() is not None:
+            deadline_miss_duration = time_since_last_poll - scheduler.remaining()
+            if deadline_miss_duration > 0:
+                log.debug("Missed poll deadline by %fs.", deadline_miss_duration)
+
+        scheduler.poll(time_since_last_poll)
         last_poll_time = poll_time
 
         select_timeout = scheduler.remaining()
         if select_timeout is not None:
             last_poll_duration = time() - last_poll_time
             select_timeout -= last_poll_duration
-
-
 
     print(repr(reactor.error))
 

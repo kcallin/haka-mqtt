@@ -46,7 +46,10 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
+    'sphinxcontrib.seqdiag',
 ]
+
+seqdiag_fontpath = '/usr/share/fonts/liberation/LiberationSerif-Regular.ttf'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

@@ -11,7 +11,7 @@ from io import BytesIO
 from mock import Mock
 
 from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe, MqttPublish, \
-    MqttPuback, MqttPingreq
+    MqttPuback, MqttPingreq, MqttPubrec, MqttPubrel, MqttPubcomp
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -43,12 +43,19 @@ class TestReactor(unittest.TestCase):
         p.clean_session = True
 
         self.on_publish = Mock()
+        self.on_pubrel = Mock()
+        self.on_pubrec = Mock()
+        self.on_pubcomp = Mock()
         self.on_connack = Mock()
 
         self.properties = p
         self.reactor = Reactor(p)
         self.reactor.on_publish = self.on_publish
         self.reactor.on_connack = self.on_connack
+        self.reactor.on_pubrel = self.on_pubrel
+        self.reactor.on_pubcomp = self.on_pubcomp
+        self.reactor.on_pubrec = self.on_pubrec
+
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
 
@@ -254,6 +261,47 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.on_publish.assert_called_once_with(self.reactor, publish)
         self.on_publish.reset_mock()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
+
+        self.reactor.terminate()
+
+
+class TestQos2(TestReactor, unittest.TestCase):
+    def test_recv_publish(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(False, 0)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        TOPIC = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(TOPIC, 2)])
+        self.set_send_packet_result(p)
+        self.reactor.subscribe(p.topics)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        suback = MqttSuback(p.packet_id, [SubscribeResult.qos2])
+        self.set_recv_packet_result_then_read(suback)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.on_publish.assert_not_called()
+        publish = MqttPublish(1, TOPIC, 'outgoing', False, 2, False)
+        self.set_recv_packet_result_then_read(publish)
+        self.on_publish.assert_called_once()
+
+        pubrec = MqttPubrec(publish.packet_id)
+        self.socket.send.assert_called_once_with(buffer_packet(pubrec))
+        self.socket.send.reset_mock()
+
+        self.on_pubrel.assert_not_called()
+        pubrel = MqttPubrel(publish.packet_id)
+        self.set_recv_packet_result_then_read(pubrel)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.on_pubrel.assert_called_once()
+
+        pubcomp = MqttPubcomp(publish.packet_id)
+        self.socket.send.assert_called_once_with(buffer_packet(pubcomp))
+        self.socket.send.reset_mock()
 
         self.reactor.terminate()
 

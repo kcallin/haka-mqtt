@@ -22,7 +22,7 @@ from haka_mqtt.mqtt import (
     DecodeError,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect, MqttPingreq, MqttPingresp)
+    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp)
 from haka_mqtt.on_str import HexOnStr
 
 
@@ -195,6 +195,9 @@ class Reactor:
         self.on_suback = None
         self.on_connack = None
         self.on_publish = None
+        self.on_pubrel = None
+        self.on_pubcomp = None
+        self.on_pubrec = None
 
     @property
     def clean_session(self):
@@ -379,6 +382,8 @@ class Reactor:
                     self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
                 elif header.packet_type == MqttControlPacketType.pingresp:
                     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
+                elif header.packet_type == MqttControlPacketType.pubrel:
+                    self.__on_pubrel(self.__decode_packet_body(header, num_header_bytes, MqttPubrel))
                 else:
                     m = 'Received unsupported message type {}.'.format(header.packet_type)
                     self.__log.error(m)
@@ -451,7 +456,9 @@ class Reactor:
             elif publish.qos == 1:
                 self.__write_packet(MqttPuback(publish.packet_id))
             elif publish.qos == 2:
-                raise NotImplementedError()
+                self.__write_packet(MqttPubrec(publish.packet_id))
+                # TODO: Record publish packet
+                # raise NotImplementedError()
         elif self.state is ReactorState.stopping:
             if publish.qos == 0:
                 pass
@@ -514,6 +521,22 @@ class Reactor:
                 self.__abort(DecodeReactorError())
         else:
             assert False, 'Received MqttPuback at an inappropriate time.'
+
+    def __on_pubrel(self, pubrel):
+        """
+
+        Parameters
+        ----------
+        pubrel: MqttPubrel
+
+        """
+        if self.state is ReactorState.connected:
+            self.__log.info('Received %s.', repr(pubrel))
+            if self.on_pubrel is not None:
+                self.on_pubrel(self, pubrel)
+            self.__write_packet(MqttPubcomp(pubrel.packet_id))
+        else:
+            assert False, 'Received MqttPubrel at an inappropriate time.'
 
     def __on_pingresp(self, pingresp):
         """

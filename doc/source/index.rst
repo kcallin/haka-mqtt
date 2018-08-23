@@ -3,6 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+=====================================
 Welcome to Haka MQTT's documentation!
 =====================================
 
@@ -15,8 +16,12 @@ Welcome to Haka MQTT's documentation!
 This is a message sequence diagram.
 
 
-Client Publish QoS 1 Message
------------------------------
+Receive Path
+=============
+
+
+QoS 0
+------
 
 .. seqdiag::
    :desctable:
@@ -26,10 +31,9 @@ Client Publish QoS 1 Message
 
       C; H; S;
 
-           H -> S [diagonal, label = "Publish"];
-           H <- S [diagonal, label = "Puback"];
-      C <- H [label="on_puback call"];
-      C -> H [label="on_puback return"];
+           H <- S [diagonal, label = "Publish"];
+      C <- H [label="on_publish call"];
+      C -> H [label="on_publish return"];
 
       C [description="Client"];
       H [description="haka-mqtt"];
@@ -37,8 +41,8 @@ Client Publish QoS 1 Message
    }
 
 
-Client Receives QoS 1 Message
------------------------------
+QoS 1
+------
 
 .. seqdiag::
    :desctable:
@@ -58,9 +62,8 @@ Client Receives QoS 1 Message
       S [description="MQTT Server"];
    }
 
-
-Client Receives QoS 1 Message with Disconnect
----------------------------------------------
+QoS 1 with Pre-Ack Disconnect
+-------------------------------
 
 .. seqdiag::
    :desctable:
@@ -84,34 +87,8 @@ Client Receives QoS 1 Message with Disconnect
       S [description="MQTT Server"];
    }
 
-
-Client Publishes QoS 2 Message
--------------------------------
-
-.. seqdiag::
-   :desctable:
-
-   seqdiag {
-      activation = none;
-
-      C; H; S;
-
-           H -> S [diagonal, label = "Publish"];
-           H <- S [diagonal, label = "Pubrec"];
-      C <- H [label="on_pubrec call"];
-      C -> H [label="on_pubrec return"];
-           H -> S [diagonal, label = "Pubrel"];
-           H <- S [diagonal, label = "Pubcomp"];
-      C <- H [label="on_pubcomp call"];
-      C -> H [label="on_pubcomp return"];
-
-      C [description="Client"];
-      H [description="haka-mqtt"];
-      S [description="MQTT Server"];
-   }
-
-Client Receives QoS 2 Message
------------------------------
+QoS 2
+------
 
 .. seqdiag::
    :desctable:
@@ -135,6 +112,77 @@ Client Receives QoS 2 Message
       S [description="MQTT Server"];
    }
 
+Send Path
+==========
+
+QoS 0
+------
+
+.. seqdiag::
+   :desctable:
+
+   seqdiag {
+      C; H; S;
+
+      C -> H [label="publish call"];
+           H -> S [diagonal, label = "Publish"];
+      C <- H [label="publish return"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      S [description="MQTT Server"];
+   }
+
+QoS 1
+------
+
+.. seqdiag::
+   :desctable:
+
+   seqdiag {
+      activation = none;
+
+      C; H; S;
+
+      C -> H [label="publish call"];
+           H -> S [diagonal, label = "Publish"];
+      C <- H [label="publish return"];
+           H <- S [diagonal, label = "Puback"];
+      C <- H [label="on_puback call"];
+      C -> H [label="on_puback return"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      S [description="MQTT Server"];
+   }
+
+
+QoS 2
+------
+
+.. seqdiag::
+   :desctable:
+
+   seqdiag {
+      activation = none;
+
+      C; H; S;
+
+      C -> H [label="publish call"];
+           H -> S [diagonal, label = "Publish"];
+      C <- H [label="publish return"];
+           H <- S [diagonal, label = "Pubrec"];
+      C <- H [label="on_pubrec call"];
+      C -> H [label="on_pubrec return"];
+           H -> S [diagonal, label = "Pubrel"];
+           H <- S [diagonal, label = "Pubcomp"];
+      C <- H [label="on_pubcomp call"];
+      C -> H [label="on_pubcomp return"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      S [description="MQTT Server"];
+   }
 
 Indices and tables
 ==================

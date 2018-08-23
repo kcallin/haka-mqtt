@@ -330,9 +330,9 @@ class MqttPacketBody(MqttFixedHeader):
 
         Parameters
         ----------
-        dup: bool
-        retain: bool
-        will: MqttWill
+        packet_type: MqttControlPacketType
+        flags: int
+            Flags 0 <= flags <= 2**8-1.
         """
 
         bio = BytesIO()
@@ -483,6 +483,7 @@ class MqttConnect(MqttPacketBody):
 
         Parameters
         ----------
+        header: MqttFixedHeader
         buf
 
         Returns
@@ -706,7 +707,7 @@ FIELD_U16 = Struct('>H')
 FIELD_PACKET_ID = FIELD_U16
 
 
-class CursorBuf():
+class CursorBuf(object):
     def __init__(self, buf):
         self.buf = buf
         self.view = buf
@@ -900,8 +901,19 @@ class SubscribeResult(IntEnum):
         else:
             raise TypeError()
 
+        return rv
+
 
 class MqttSuback(MqttPacketBody):
+    """
+    Attributes
+    ----------
+    packet_id: int
+        Packet id such that 0 <= packet_id <= 2**16-1.
+    results:
+        List of return codes specifying the maximum QoS level that was
+        granted in each or fail if the subscription failed.
+    """
     def __init__(self, packet_id, results):
         """
 
@@ -911,13 +923,21 @@ class MqttSuback(MqttPacketBody):
             0 <= packet_id <= 2**16-1
         results: iterable of SubscribeResult
         """
-        self.packet_id = packet_id
-        self.results = tuple(results)
+        self.__packet_id = packet_id
+        self.__results = tuple(results)
 
         assert len(self.results) >= 1  # MQTT 3.8.3-3
 
         flags = 0
         MqttPacketBody.__init__(self, MqttControlPacketType.suback, flags)
+
+    @property
+    def packet_id(self):
+        return self.__packet_id
+
+    @property
+    def results(self):
+        return self.__results
 
     def encode_body(self, f):
         """
@@ -1276,7 +1296,7 @@ class MqttUnsubscribe(MqttPacketBody):
             raise TypeError()
 
         assert len(topics) >= 1  # MQTT 3.10.3-2
-        flags = 2 # MQTT 3.10.1-1
+        flags = 2  # MQTT 3.10.1-1
         MqttPacketBody.__init__(self, MqttControlPacketType.unsubscribe, flags)
 
     def encode_body(self, f):

@@ -99,6 +99,30 @@ Client Publishes QoS 2 Message
       S [description = "MQTT Server"];
    }
 
+Client Receives QoS 2 Message
+-----------------------------
+
+.. seqdiag::
+   :desctable:
+
+   seqdiag {
+      activation = none;
+
+      C; H; S;
+
+           H <- S [diagonal, label = "Publish"];
+      C <- H [label="on_publish call"];
+      C -> H [label="on_publish return"];
+           H -> S [diagonal, label = "Pubrec"];
+           H <- S [diagonal, label = "Pubrel"];
+      C <- H [label="on_pubrel call"];
+      C -> H [label="on_pubrel return"];
+           H -> S [diagonal, label = "Pubcomp"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      S [description="MQTT Server"];
+   }
 
 
 Indices and tables

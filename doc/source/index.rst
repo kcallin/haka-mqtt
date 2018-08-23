@@ -24,11 +24,14 @@ Client Publish QoS 1 Message
    seqdiag {
       activation = none;
 
-      H; S;
+      C; H; S;
 
-      H -> S [diagonal, label = "Publish"];
-      H <- S [diagonal, label = "Puback"];
+           H -> S [diagonal, label = "Publish"];
+           H <- S [diagonal, label = "Puback"];
+      C <- H [label="on_puback call"];
+      C -> H [label="on_puback return"];
 
+      C [description="Client"];
       H [description="haka-mqtt"];
       S [description="MQTT Server"];
    }
@@ -91,12 +94,20 @@ Client Publishes QoS 2 Message
    seqdiag {
       activation = none;
 
-      C -> S [diagonal, label = "Publish"];
-      C <- S [diagonal, label = "Pubrec"];
-      C -> S [diagonal, label = "Pubrel"];
-      C <- S [diagonal, label = "Pubcomp"];
-      C [description = "haka-MQTT Client"];
-      S [description = "MQTT Server"];
+      C; H; S;
+
+           H -> S [diagonal, label = "Publish"];
+           H <- S [diagonal, label = "Pubrec"];
+      C <- H [label="on_pubrec call"];
+      C -> H [label="on_pubrec return"];
+           H -> S [diagonal, label = "Pubrel"];
+           H <- S [diagonal, label = "Pubcomp"];
+      C <- H [label="on_pubcomp call"];
+      C -> H [label="on_pubcomp return"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      S [description="MQTT Server"];
    }
 
 Client Receives QoS 2 Message

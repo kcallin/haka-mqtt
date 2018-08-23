@@ -52,6 +52,10 @@ class ReactorProperties(object):
     keepalive_period: int
         0 <= keepalive_period <= 2*16-1
     clean_session: bool
+        With clean session set to True reactor will clear all message
+        buffers on disconnect without regard to QoS; otherwise
+        unacknowledged messages will be retransmitted after a
+        re-connect.
     """
     def __init__(self):
         self.socket = None

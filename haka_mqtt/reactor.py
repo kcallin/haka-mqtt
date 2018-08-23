@@ -22,7 +22,7 @@ from haka_mqtt.mqtt import (
     DecodeError,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp)
+    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult)
 from haka_mqtt.on_str import HexOnStr
 
 
@@ -429,6 +429,21 @@ class Reactor:
         if self.state is ReactorState.connack:
             self.__log.info('Received %s.', repr(connack))
             self.__state = ReactorState.connected
+
+            # accepted = 0
+            # fail_bad_protocol_version = 1
+            # fail_bad_client_id = 2
+            # fail_server_unavailable = 3
+            # fail_bad_username_or_password = 4
+            # fail_not_authorized = 5
+
+            if connack.return_code == ConnackResult.accepted:
+                pass
+            elif connack.return_code == ConnackResult.fail_bad_client_id:
+                pass
+
+            # The first packet sent from the Server to the Client MUST
+            # be a CONNACK Packet [MQTT-3.2.0-1].
 
             if connack.session_present and self.clean_session:
                 # [MQTT-3.2.2-1]

@@ -11,7 +11,7 @@ from io import BytesIO
 from mock import Mock
 
 from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe, MqttPublish, \
-    MqttPuback, MqttPingreq, MqttPubrec, MqttPubrel, MqttPubcomp
+    MqttPuback, MqttPingreq, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -168,7 +168,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_connack_unexpected_session_present(self):
         self.start_to_connect()
 
-        connack = MqttConnack(True, 0)
+        connack = MqttConnack(True, ConnackResult.accepted)
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.error)
         self.on_connack.assert_not_called()
@@ -176,7 +176,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_start(self):
         self.start_to_connect()
 
-        connack = MqttConnack(False, 0)
+        connack = MqttConnack(False, ConnackResult.accepted)
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
@@ -230,7 +230,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.set_send_packet_drip_and_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
-        connack = MqttConnack(False, 0)
+        connack = MqttConnack(False, ConnackResult.accepted)
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
@@ -269,7 +269,7 @@ class TestQos2(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connect()
 
-        connack = MqttConnack(False, 0)
+        connack = MqttConnack(False, ConnackResult.accepted)
         self.set_recv_packet_result_then_read(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
@@ -351,7 +351,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
-        self.set_recv_packet_result_then_read(MqttConnack(False, 0))
+        self.set_recv_packet_result_then_read(MqttConnack(False, ConnackResult.accepted))
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.set_recv_result(0)

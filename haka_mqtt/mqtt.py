@@ -622,11 +622,12 @@ class MqttConnack(MqttPacketBody):
         ----------
         session_present: bool
             Session present.
-        return_code: int
+        return_code: ConnackResult
             Connack return code [Line 709 mqtt]
         """
         assert 0 <= return_code <= 255
         assert isinstance(session_present, bool)
+        assert isinstance(return_code, ConnackResult)
 
         self.session_present = session_present
         self.return_code = return_code
@@ -679,7 +680,7 @@ class MqttConnack(MqttPacketBody):
 
     def __repr__(self):
         msg = 'MqttConnack(session_present={}, return_code={})'
-        return msg.format(self.session_present, self.return_code)
+        return msg.format(self.session_present, repr(self.return_code))
 
 
 class MqttTopic(object):

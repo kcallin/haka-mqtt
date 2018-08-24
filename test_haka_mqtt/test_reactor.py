@@ -145,6 +145,7 @@ class TestReactor(unittest.TestCase):
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
         self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -288,6 +289,48 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         puback = MqttPuback(expected_publish.packet_id)
         self.set_recv_packet_result_then_read(puback)
         self.on_puback.assert_called_once()
+
+        self.reactor.terminate()
+
+    def test_publish_disconnect_connect_republish_qos1(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        TOPIC = 'topic'
+        expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
+        self.set_send_packet_result(expected_publish)
+        actual_publish = self.reactor.publish(expected_publish.topic,
+                                              expected_publish.payload,
+                                              expected_publish.qos,
+                                              expected_publish.retain)
+        self.assertFalse(self.reactor.want_write())
+        self.assertEqual(expected_publish, actual_publish)
+        self.socket.send.reset_mock()
+
+        self.reactor.terminate()
+
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
+
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.set_recv_packet_result_then_read(connack)
+        self.set_send_packet_result(expected_publish)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.socket.send.assert_called_once_with(buffer_packet(expected_publish))
+        self.assertFalse(self.reactor.want_write())
 
         self.reactor.terminate()
 

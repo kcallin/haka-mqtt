@@ -294,7 +294,9 @@ class Reactor:
 
     def start(self):
         self.__assert_state_rules()
-        assert self.state == ReactorState.init
+
+        assert self.state in (ReactorState.init, ReactorState.error, ReactorState.stopped)
+        self.__error = None
 
         self.__log.info('Starting.')
 
@@ -340,6 +342,8 @@ class Reactor:
 
         if self.state not in INACTIVE_STATES:
             self.__terminate()
+
+        self.__state = ReactorState.stopped
 
         self.__assert_state_rules()
 

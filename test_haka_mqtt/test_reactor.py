@@ -26,14 +26,7 @@ def buffer_packet(packet):
 
 
 class TestReactor(unittest.TestCase):
-    def setUp(self):
-        logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
-        self.socket = Mock()
-        self.endpoint = ('test.mosquitto.org', 1883)
-        self.client_id = 'client'
-        self.keepalive_period = 10*60
-        self.scheduler = Scheduler()
-
+    def reactor_properties(self):
         p = ReactorProperties()
         p.socket = self.socket
         p.endpoint = self.endpoint
@@ -42,6 +35,16 @@ class TestReactor(unittest.TestCase):
         p.scheduler = self.scheduler
         p.clean_session = True
 
+        return p
+
+    def setUp(self):
+        logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+        self.socket = Mock()
+        self.endpoint = ('test.mosquitto.org', 1883)
+        self.client_id = 'client'
+        self.keepalive_period = 10*60
+        self.scheduler = Scheduler()
+
         self.on_publish = Mock()
         self.on_pubrel = Mock()
         self.on_pubrec = Mock()
@@ -49,8 +52,8 @@ class TestReactor(unittest.TestCase):
         self.on_connack = Mock()
         self.on_puback = Mock()
 
-        self.properties = p
-        self.reactor = Reactor(p)
+        self.properties = self.reactor_properties()
+        self.reactor = Reactor(self.properties)
         self.reactor.on_publish = self.on_publish
         self.reactor.on_connack = self.on_connack
         self.reactor.on_pubrel = self.on_pubrel
@@ -151,7 +154,7 @@ class TestReactor(unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
 
         self.socket.getsockopt.return_value = 0
-        self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
 
@@ -194,7 +197,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.set_recv_packet_result_then_read(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        p = MqttPublish(1, TOPIC, 'outgoing', False, 0, False)
+        p = MqttPublish(1, TOPIC, 'outgoing', False, 1, False)
         self.set_send_packet_result(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_called_once_with(buffer_packet(p))
@@ -248,7 +251,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.set_recv_packet_result_then_read(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        p = MqttPublish(1, TOPIC, 'outgoing', False, 0, False)
+        p = MqttPublish(1, TOPIC, 'outgoing', False, 1, False)
         self.set_send_packet_result(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_called_once_with(buffer_packet(p))
@@ -269,6 +272,11 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
 
 class TestSendPathQos1(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        p = super(type(self), self).reactor_properties()
+        p.clean_session = False
+        return p
+
     def test_publish_qos1(self):
         self.start_to_connect()
 
@@ -322,7 +330,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
 
         self.socket.getsockopt.return_value = 0
-        self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
         connack = MqttConnack(False, ConnackResult.accepted)

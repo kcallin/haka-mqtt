@@ -175,6 +175,7 @@ class Reactor:
         self.__log = logging.getLogger('mqtt_reactor')
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
+        self.__publish_queue = []
 
         self.__client_id = properties.client_id
         self.__clock = properties.clock
@@ -282,11 +283,15 @@ class Reactor:
         MqttPublish
         """
         self.__assert_state_rules()
+        assert 0 <= qos <= 2
         assert self.state is ReactorState.connected
 
         p = MqttPublish(next(self.__packet_id_iter), topic, payload, False, qos, retain)
-        self.__in_flight_packets[p.packet_id] = p
-        self.__write_packet(p)
+        if qos == 1 or qos == 2:
+            self.__publish_queue.append(p)
+
+        if len(self.__publish_queue) <= 1:
+            self.__write_packet(p)
 
         self.__assert_state_rules()
 
@@ -297,6 +302,9 @@ class Reactor:
 
         assert self.state in (ReactorState.init, ReactorState.error, ReactorState.stopped)
         self.__error = None
+
+        if self.clean_session:
+            self.__publish_queue = []
 
         self.__log.info('Starting.')
 
@@ -339,6 +347,8 @@ class Reactor:
 
     def terminate(self):
         self.__assert_state_rules()
+
+        self.__log.info('Terminating.')
 
         if self.state not in INACTIVE_STATES:
             self.__terminate()
@@ -456,6 +466,9 @@ class Reactor:
                 self.__abort(e)
             elif self.on_connack is not None:
                 self.on_connack(self, connack)
+
+            if self.__publish_queue:
+                self.__write_packet(self.__publish_queue[0])
         else:
             m = 'Received connack at an inappropriate time.'
             self.__log.error(m)
@@ -529,13 +542,8 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            try:
-                self.__in_flight_packets.pop(puback.packet_id)
-                in_flight = True
-            except KeyError:
-                in_flight = False
-
-            if in_flight:
+            if self.__publish_queue and self.__publish_queue[0].packet_id == puback.packet_id:
+                del self.__publish_queue[0]
                 self.__log.info('Received %s.', repr(puback))
                 if self.on_puback is not None:
                     self.on_puback(self, puback)
@@ -654,6 +662,9 @@ class Reactor:
         if self.__keepalive_due_deadline is not None:
             self.__keepalive_due_deadline.cancel()
             self.__keepalive_due_deadline = None
+
+        if self.clean_session:
+            self.__publish_queue = []
 
     def __abort(self, e):
         self.__terminate()

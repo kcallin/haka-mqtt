@@ -47,6 +47,7 @@ class TestReactor(unittest.TestCase):
         self.on_pubrec = Mock()
         self.on_pubcomp = Mock()
         self.on_connack = Mock()
+        self.on_puback = Mock()
 
         self.properties = p
         self.reactor = Reactor(p)
@@ -55,6 +56,7 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_pubrel = self.on_pubrel
         self.reactor.on_pubcomp = self.on_pubcomp
         self.reactor.on_pubrec = self.on_pubrec
+        self.reactor.on_puback = self.on_puback
 
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
@@ -265,7 +267,63 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
 
-class TestQos2(TestReactor, unittest.TestCase):
+class TestSendPathQos1(TestReactor, unittest.TestCase):
+    def test_publish_qos1(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        TOPIC = 'topic'
+        expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
+        self.set_send_packet_result(expected_publish)
+        actual_publish = self.reactor.publish(expected_publish.topic,
+                                       expected_publish.payload,
+                                       expected_publish.qos,
+                                       expected_publish.retain)
+        self.assertFalse(self.reactor.want_write())
+        self.assertEqual(expected_publish, actual_publish)
+
+        puback = MqttPuback(expected_publish.packet_id)
+        self.set_recv_packet_result_then_read(puback)
+        self.on_puback.assert_called_once()
+
+        self.reactor.terminate()
+
+
+class TestReceivePathQos1(TestReactor, unittest.TestCase):
+    def test_recv_publish(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.set_recv_packet_result_then_read(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        TOPIC = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(TOPIC, 1)])
+        self.set_send_packet_result(p)
+        self.reactor.subscribe(p.topics)
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        suback = MqttSuback(p.packet_id, [SubscribeResult.qos1])
+        self.set_recv_packet_result_then_read(suback)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.on_publish.assert_not_called()
+        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
+        self.set_recv_packet_result_then_read(publish)
+        self.on_publish.assert_called_once()
+
+        puback = MqttPuback(publish.packet_id)
+        self.socket.send.assert_called_once_with(buffer_packet(puback))
+        self.socket.send.reset_mock()
+
+        self.reactor.terminate()
+
+
+class TestReceivePathQos2(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connect()
 

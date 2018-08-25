@@ -453,7 +453,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
-        self.set_recv_side_effect([0])
+        self.set_recv_side_effect([''])
         self.reactor.read()
         self.assertEqual(self.reactor.state, ReactorState.error)
 
@@ -473,5 +473,5 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.read_packet_then_block(MqttConnack(False, ConnackResult.accepted))
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        self.set_recv_side_effect([0])
+        self.set_recv_side_effect([''])
         self.reactor.read()

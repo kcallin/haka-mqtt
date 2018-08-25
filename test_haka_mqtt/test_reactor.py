@@ -10,12 +10,27 @@ from io import BytesIO
 
 from mock import Mock
 
-from haka_mqtt.mqtt import MqttConnack, MqttTopic, MqttSuback, SubscribeResult, MqttConnect, MqttSubscribe, MqttPublish, \
-    MqttPuback, MqttPingreq, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult
+from haka_mqtt.mqtt import (
+    MqttConnack,
+    MqttTopic,
+    MqttSuback,
+    SubscribeResult,
+    MqttConnect,
+    MqttSubscribe,
+    MqttPublish,
+    MqttPuback,
+    MqttPingreq,
+    MqttPubrec,
+    MqttPubrel,
+    MqttPubcomp,
+    ConnackResult
+)
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
-    ReactorState, KeepaliveTimeoutReactorError)
+    ReactorState,
+    KeepaliveTimeoutReactorError
+)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -68,30 +83,28 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(0, len(self.scheduler))
         self.log.info('%s tearDown()', self._testMethodName)
 
-    def set_recv_result(self, rv):
-        if isinstance(rv, Exception):
-            self.socket.recv.side_effect = rv
-        else:
-            self.socket.recv.return_value = rv
+    def set_recv_side_effect(self, rv_iterable):
+        self.socket.recv.side_effect = rv_iterable
 
-    def set_recv_packet_result_then_read(self, p):
-        self.socket.recv.return_value = buffer_packet(p)
+    def read_packet_then_block(self, p):
+        self.set_recv_side_effect([buffer_packet(p), socket.error(errno.EWOULDBLOCK)])
         self.reactor.read()
         self.socket.recv.assert_called_once()
         self.socket.recv.reset_mock()
+        self.socket.recv.side_effect = None
+        self.socket.recv.return_value = None
 
-    def set_send_result(self, rv):
-        if isinstance(rv, Exception):
-            self.socket.send.side_effect = rv
-        else:
-            self.socket.send.return_value = rv
+    def set_send_side_effect(self, rv_iterable):
+        self.socket.send.side_effect = rv_iterable
 
     def set_send_result_then_write(self, rv, buf):
-        self.set_send_result(rv)
+        self.set_send_side_effect([rv, socket.error(errno.EWOULDBLOCK)])
 
         self.reactor.write()
         self.socket.send.assert_called_once_with(buf)
         self.socket.send.reset_mock()
+        self.socket.send.side_effect = None
+        self.socket.send.return_value = None
 
     def set_send_packet_result(self, p, exc=None):
         with BytesIO() as f:
@@ -100,7 +113,7 @@ class TestReactor(unittest.TestCase):
         if exc:
             num_bytes_written = exc
 
-        self.set_send_result(num_bytes_written)
+        self.set_send_side_effect([num_bytes_written])
 
     def set_send_packet_result_then_write(self, p, exc=None):
         buf = buffer_packet(p)
@@ -108,7 +121,7 @@ class TestReactor(unittest.TestCase):
         if exc:
             num_bytes_written = exc
 
-        self.set_send_result(len(buf))
+        self.set_send_side_effect([len(buf)])
 
         self.reactor.write()
         self.socket.send.assert_called_once_with(buf)
@@ -135,13 +148,6 @@ class TestReactor(unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
 
-    def encode_packet_to_buf(self, p):
-        with BytesIO() as f:
-            p.encode(f)
-            buf = f.getvalue()
-
-        return bytearray(buf)
-
     def start_to_connect(self):
         self.assertEqual(ReactorState.init, self.reactor.state)
 
@@ -156,6 +162,25 @@ class TestReactor(unittest.TestCase):
         self.socket.getsockopt.return_value = 0
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
+
+    def start_to_connack(self):
+        self.assertEqual(ReactorState.init, self.reactor.state)
+
+        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.reset_mock()
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.assertFalse(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+
+        self.socket.getsockopt.return_value = 0
+        self.set_send_packet_result_then_write(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.read_packet_then_block(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
 
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
@@ -175,41 +200,37 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.start_to_connect()
 
         connack = MqttConnack(True, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
+        self.read_packet_then_block(connack)
         self.assertEqual(self.reactor.state, ReactorState.error)
         self.on_connack.assert_not_called()
 
     def test_start(self):
-        self.start_to_connect()
+        self.start_to_connack()
 
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
-
-        TOPIC = 'bear_topic'
-        p = MqttSubscribe(0, [MqttTopic(TOPIC, 0)])
+        topic_name = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(topic_name, 0)])
         self.set_send_packet_result(p)
         self.reactor.subscribe(p.topics)
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
         suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
-        self.set_recv_packet_result_then_read(suback)
+        self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        p = MqttPublish(1, TOPIC, 'outgoing', False, 1, False)
+        p = MqttPublish(1, topic_name, 'outgoing', False, 1, False)
         self.set_send_packet_result(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
         p = MqttPuback(p.packet_id)
-        self.set_recv_packet_result_then_read(p)
+        self.read_packet_then_block(p)
 
-        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
+        publish = MqttPublish(1, topic_name, 'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_result(puback)
-        self.set_recv_packet_result_then_read(publish)
+        self.read_packet_then_block(publish)
         self.on_publish.assert_called_once_with(self.reactor, publish)
         self.on_publish.reset_mock()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
@@ -237,7 +258,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
         connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
+        self.read_packet_then_block(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         TOPIC = 'bear_topic'
@@ -248,7 +269,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
 
         suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
-        self.set_recv_packet_result_then_read(suback)
+        self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         p = MqttPublish(1, TOPIC, 'outgoing', False, 1, False)
@@ -258,12 +279,12 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
 
         p = MqttPuback(p.packet_id)
-        self.set_recv_packet_result_then_read(p)
+        self.read_packet_then_block(p)
 
         publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_result(puback)
-        self.set_recv_packet_result_then_read(publish)
+        self.read_packet_then_block(publish)
         self.on_publish.assert_called_once_with(self.reactor, publish)
         self.on_publish.reset_mock()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
@@ -278,11 +299,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         return p
 
     def test_publish_qos1(self):
-        self.start_to_connect()
-
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.start_to_connack()
 
         TOPIC = 'topic'
         expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
@@ -295,17 +312,13 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(expected_publish, actual_publish)
 
         puback = MqttPuback(expected_publish.packet_id)
-        self.set_recv_packet_result_then_read(puback)
+        self.read_packet_then_block(puback)
         self.on_puback.assert_called_once()
 
         self.reactor.terminate()
 
     def test_publish_disconnect_connect_republish_qos1(self):
-        self.start_to_connect()
-
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.start_to_connack()
 
         TOPIC = 'topic'
         expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
@@ -334,7 +347,8 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
         connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
+        self.set_send_side_effect([len(buffer_packet(expected_publish))])
+        self.read_packet_then_block(connack)
         self.set_send_packet_result(expected_publish)
         self.assertEqual(self.reactor.state, ReactorState.connected)
         self.socket.send.assert_called_once_with(buffer_packet(expected_publish))
@@ -345,26 +359,23 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
 class TestReceivePathQos1(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
-        self.start_to_connect()
+        self.start_to_connack()
 
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
-
-        TOPIC = 'bear_topic'
-        p = MqttSubscribe(0, [MqttTopic(TOPIC, 1)])
+        topic_name = 'bear_topic'
+        p = MqttSubscribe(0, [MqttTopic(topic_name, 1)])
         self.set_send_packet_result(p)
         self.reactor.subscribe(p.topics)
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
         suback = MqttSuback(p.packet_id, [SubscribeResult.qos1])
-        self.set_recv_packet_result_then_read(suback)
+        self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.on_publish.assert_not_called()
-        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
-        self.set_recv_packet_result_then_read(publish)
+        publish = MqttPublish(1, topic_name, 'incoming', False, 1, False)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
 
         puback = MqttPuback(publish.packet_id)
@@ -376,11 +387,7 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
 
 class TestReceivePathQos2(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
-        self.start_to_connect()
-
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_recv_packet_result_then_read(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.start_to_connack()
 
         TOPIC = 'bear_topic'
         p = MqttSubscribe(0, [MqttTopic(TOPIC, 2)])
@@ -390,12 +397,13 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
 
         suback = MqttSuback(p.packet_id, [SubscribeResult.qos2])
-        self.set_recv_packet_result_then_read(suback)
+        self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.on_publish.assert_not_called()
         publish = MqttPublish(1, TOPIC, 'outgoing', False, 2, False)
-        self.set_recv_packet_result_then_read(publish)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
 
         pubrec = MqttPubrec(publish.packet_id)
@@ -404,7 +412,9 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
 
         self.on_pubrel.assert_not_called()
         pubrel = MqttPubrel(publish.packet_id)
-        self.set_recv_packet_result_then_read(pubrel)
+        pubcomp = MqttPubcomp(publish.packet_id)
+        self.set_send_side_effect([len(buffer_packet(pubcomp))])
+        self.read_packet_then_block(pubrel)
         self.assertEqual(ReactorState.connected, self.reactor.state)
         self.on_pubrel.assert_called_once()
 
@@ -426,7 +436,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
 
         self.socket.getsockopt.return_value = 0
-        self.set_send_result(socket.error(errno.EPIPE, os.strerror(errno.EPIPE)))
+        self.set_send_side_effect([socket.error(errno.EPIPE, os.strerror(errno.EPIPE))])
         self.reactor.write()
         self.assertEqual(self.reactor.state, ReactorState.error)
 
@@ -443,7 +453,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
-        self.set_recv_result(0)
+        self.set_recv_side_effect([0])
         self.reactor.read()
         self.assertEqual(self.reactor.state, ReactorState.error)
 
@@ -460,8 +470,8 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.set_send_packet_result_then_write(MqttConnect(self.client_id, True, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
-        self.set_recv_packet_result_then_read(MqttConnack(False, ConnackResult.accepted))
+        self.read_packet_then_block(MqttConnack(False, ConnackResult.accepted))
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        self.set_recv_result(0)
+        self.set_recv_side_effect([0])
         self.reactor.read()

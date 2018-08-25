@@ -4,13 +4,13 @@ import logging
 from binascii import b2a_hex
 from io import BytesIO
 from itertools import cycle
-from time import time
 
 from enum import (
     IntEnum,
     unique,
 )
 
+from haka_mqtt.clock import SystemClock
 from haka_mqtt.mqtt import (
     MqttConnect,
     MqttSubscribe,
@@ -24,22 +24,6 @@ from haka_mqtt.mqtt import (
     MqttPuback,
     MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult)
 from haka_mqtt.on_str import HexOnStr
-
-
-class SystemClock(object):
-    def time(self):
-        return time()
-
-
-class SettableClock(object):
-    def __init__(self):
-        self.__time = 0
-
-    def set_time(self, t):
-        self.__time = t
-
-    def time(self):
-        return self.__time
 
 
 class ReactorProperties(object):
@@ -78,9 +62,8 @@ class ReactorState(IntEnum):
     error = 6
 
 
-# Graceful stop path
-#
-# connected -> stopping -> mute -> stopped
+# States where there are no active deadlines, the socket is closed and there
+# is no active I/O.
 #
 INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
@@ -248,6 +231,9 @@ class Reactor:
         if self.state in INACTIVE_STATES:
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
+            assert not self.want_write()
+            assert not self.want_write()
+
             # TODO: assert socket is not running.
 
         if self.state is ReactorState.error:

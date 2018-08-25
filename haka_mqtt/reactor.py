@@ -408,10 +408,22 @@ class Reactor:
                     self.__abort(DecodeReactorError(m))
 
     def read(self):
+        """Calls recv on underlying socket exactly once and returns the
+        number of bytes read.  If the underlying socket does not return
+        any bytes due to an error or exception then zero is returned and
+        the reactor state is set to error.
+
+        Returns
+        -------
+        int
+            number of bytes read from socket.
+        """
         self.__assert_state_rules()
 
+        num_bytes_read = 0
         try:
             new_bytes = self.socket.recv(4096)
+            num_bytes_read = len(new_bytes)
             if new_bytes:
                 self.__on_recv_bytes(new_bytes)
             else:
@@ -432,6 +444,7 @@ class Reactor:
                 self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
+        return num_bytes_read
 
     def __on_connack(self, connack):
         """
@@ -626,6 +639,15 @@ class Reactor:
         self.__write_packet(MqttConnect(self.client_id, self.clean_session, self.keepalive_period))
 
     def __flush(self):
+        """Calls send exactly once; returning the number of bytes written.
+
+        Returns
+        -------
+        int
+            Number of bytes written.
+        """
+
+        num_bytes_written = 0
         if self.__wbuf:
             try:
                 num_bytes_written = self.socket.send(self.__wbuf)
@@ -640,6 +662,8 @@ class Reactor:
                 else:
                     self.__log.error("%s (errno=%d); Aborting.", e.strerror, e.errno)
                     self.__abort(SocketError(e.errno))
+
+        return num_bytes_written
 
     def __terminate(self):
         if self.state in (ReactorState.connecting,

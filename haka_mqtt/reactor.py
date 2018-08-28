@@ -68,6 +68,11 @@ class ReactorState(IntEnum):
 INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
 
+class TopicSubscription(object):
+    def __init__(self):
+        pass
+
+
 class ReactorError:
     pass
 
@@ -102,14 +107,15 @@ class SocketError(ReactorError):
         self.errno = errno_val
 
     def __repr__(self):
-        return 'SocketError({} ({}))'.format(errno.errorcode[self.errno], self.errno)
+        return 'SocketError({}<{}>)'.format(errno.errorcode[self.errno], self.errno)
 
 
 class AddressingReactorError(ReactorError):
     """
     Attributes
     ----------
-    error: errno
+    errno: int
+    description: str
     """
     def __init__(self, gaierror):
         """
@@ -607,13 +613,24 @@ class Reactor:
             assert False, 'Received muted_remote at an inappropriate time.'
 
     def __write_packet(self, packet):
+        """
+
+        Parameters
+        ----------
+        packet
+
+        Returns
+        -------
+        int
+            Returns number of bytes flushed to underlying socket.
+        """
         self.__log.info('Sending %s.', repr(packet))
         bio = BytesIO()
         packet.encode(bio)
         buf = bio.getvalue()
         self.__log.debug('Sending %d bytes 0x%s.', len(buf), HexOnStr(buf))
         self.__wbuf.extend(buf)
-        self.__flush()
+        return self.__flush()
 
     def __on_connect(self):
         assert self.state == ReactorState.connecting

@@ -720,6 +720,8 @@ class Reactor:
         if self.__queue:
             packet = self.__queue.pop(0)
 
+            # TODO: Respect maximum number of in-flight publish packets.
+
             # if packet.packet_type is MqttControlPacketType.connect:
             #     pass
             # elif packet.packet_type is MqttControlPacketType.connack:

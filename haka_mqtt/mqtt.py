@@ -814,7 +814,7 @@ class MqttSubscribe(MqttPacketBody):
             raise TypeError()
 
         assert len(topics) >= 1  # MQTT 3.8.3-3
-        flags = 2 # MQTT 3.8.1-1
+        flags = 2  # MQTT 3.8.1-1
         MqttPacketBody.__init__(self, MqttControlPacketType.subscribe, flags)
 
     def encode_body(self, f):
@@ -1124,7 +1124,7 @@ class MqttPuback(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPuback)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.puback
@@ -1171,7 +1171,7 @@ class MqttPubrec(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPubrec)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.pubrec
@@ -1218,7 +1218,7 @@ class MqttPubrel(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPubrel)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.pubrel
@@ -1265,7 +1265,7 @@ class MqttPubcomp(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPubcomp)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.pubcomp
@@ -1390,7 +1390,7 @@ class MqttUnsuback(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttUnsuback)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.unsuback
@@ -1435,7 +1435,7 @@ class MqttPingreq(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPingreq)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.pingreq
@@ -1475,7 +1475,7 @@ class MqttPingresp(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttPingresp)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.pingresp
@@ -1516,7 +1516,7 @@ class MqttDisconnect(MqttPacketBody):
 
         Returns
         -------
-        (int, MqttSubscribe)
+        (int, MqttDisconnect)
             Number of bytes written to file.
         """
         assert header.packet_type == MqttControlPacketType.disconnect

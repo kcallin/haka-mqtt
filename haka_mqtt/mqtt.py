@@ -1013,6 +1013,10 @@ class MqttPublish(MqttPacketBody):
         assert 0 <= qos <= 2
         assert isinstance(dupe, bool)
         assert isinstance(retain, bool)
+        if qos == 0:
+            # The DUP flag MUST be set to 0 for all QoS 0 messages
+            # [MQTT-3.3.1-2]
+            assert dupe is False
 
         self.packet_id = packet_id
         self.topic = topic
@@ -1071,6 +1075,11 @@ class MqttPublish(MqttPacketBody):
         dupe = bool(header.flags & 0x08)
         retain = bool(header.flags & 0x01)
         qos = ((header.flags & 0x06) >> 1)
+
+        if qos == 0 and dupe:
+            # The DUP flag MUST be set to 0 for all QoS 0 messages
+            # [MQTT-3.3.1-2]
+            raise DecodeError("Unexpected dupe=True for qos==0 message [MQTT-3.3.1-2].")
 
         cb = CursorBuf(buf[0:header.remaining_len])
         num_bytes_consumed, topic_name = cb.unpack_utf8()

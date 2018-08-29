@@ -40,6 +40,8 @@ class ReactorProperties(object):
         buffers on disconnect without regard to QoS; otherwise
         unacknowledged messages will be retransmitted after a
         re-connect.
+    max_inflight_publish: int
+        Maximum number of in-flight publish messages.
     """
     def __init__(self):
         self.socket = None
@@ -49,6 +51,7 @@ class ReactorProperties(object):
         self.keepalive_period = 10*60
         self.scheduler = None
         self.clean_session = True
+        self.max_inflight_publish = 1
 
 
 @unique
@@ -158,6 +161,8 @@ class Reactor:
         assert properties.endpoint is not None
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
+        assert isinstance(properties.max_inflight_publish, int)
+        assert properties.max_inflight_publish >= 1
         assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
 
@@ -173,6 +178,7 @@ class Reactor:
         self.__keepalive_abort_deadline = None
         self.__last_poll_instant = None
         self.__clean_session = properties.clean_session
+        self.__max_inflight_publish = properties.max_inflight_publish
 
         self.socket = properties.socket
         self.endpoint = properties.endpoint
@@ -196,6 +202,16 @@ class Reactor:
     @property
     def clean_session(self):
         return self.__clean_session
+
+    @property
+    def max_inflight_publish(self):
+        """
+        Returns
+        -------
+        int
+            Maximum number of in-flight publish messages.
+        """
+        return self.__max_inflight_publish
 
     @property
     def client_id(self):

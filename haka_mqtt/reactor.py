@@ -22,7 +22,7 @@ from haka_mqtt.mqtt import (
     DecodeError,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult)
+    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult, SubscribeResult)
 from haka_mqtt.on_str import HexOnStr
 
 
@@ -72,8 +72,25 @@ INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
 
 class TopicSubscription(object):
-    def __init__(self):
-        pass
+    def __init__(self, topic, ask_max_qos):
+        self.__topic = topic
+        self.__ask_max_qos = ask_max_qos
+        self.__granted_max_qos = None
+
+    @property
+    def topic(self):
+        return self.__topic
+
+    @property
+    def ask_max_qos(self):
+        return self.__ask_max_qos
+
+    @property
+    def granted_max_qos(self):
+        return self.__granted_max_qos
+
+    def _set_granted_max_qos(self, qos):
+        self.__granted_max_qos = qos
 
 
 class ReactorError:
@@ -199,6 +216,7 @@ class Reactor:
         self.__state = ReactorState.init
         self.__error = None
 
+        self.subscriptions = {}
         self.__queue = []
         # Publish packets must be ack'd in order of publishing
         # [MQTT-4.6.0-2], [MQTT-4.6.0-3]
@@ -289,6 +307,8 @@ class Reactor:
         """
         assert self.state == ReactorState.connected
         subscribe = MqttSubscribe(self.__packet_id_iter.next(), topics)
+        for topic in topics:
+            self.subscriptions[topic.name] = TopicSubscription(topic.name, topic.max_qos)
         self.__queue_and_flush(subscribe)
 
     def unsubscribe(self, topics):
@@ -328,6 +348,7 @@ class Reactor:
         self.__queue = in_flight_packets + [p for p in self.__queue if p.packet_type is MqttControlPacketType.publish]
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
+        self.subscriptions = {}
 
         try:
             self.__state = ReactorState.connecting
@@ -566,18 +587,30 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            try:
-                self.__in_flight_subscribe.pop(suback.packet_id)
-                in_flight = True
-            except KeyError:
-                in_flight = False
+            subscribe = self.__in_flight_subscribe.pop(suback.packet_id, None)
+            if subscribe:
+                if len(suback.results) == len(subscribe.topics):
+                    for request, result in zip(subscribe.topics, suback.results):
+                        # TODO: What if subscriptions[request.name] doesn't exist
+                        # because of conflicting unsubscribe calls?
+                        if result == SubscribeResult.fail:
+                            del self.subscriptions[request.name]
+                        else:
+                            subscription = self.subscriptions[request.name]
+                            subscription._set_granted_max_qos = result.qos()
 
-            if in_flight:
-                self.__log.info('Received %s.', repr(suback))
-                if self.on_suback is not None:
-                    self.on_suback(self, suback)
+                    self.__log.info('Received %s.', repr(suback))
+                    if self.on_suback is not None:
+                        self.on_suback(self, suback)
+                else:
+                    m = 'Received %s as a response to %s, but the number of subscription' \
+                        ' results does not equal the number of subscription requests; aborting.'
+                    self.__abort_protocol_violation(m,
+                                                    repr(suback),
+                                                    repr(subscribe))
             else:
-                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.', repr(suback))
+                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
+                                                repr(suback))
         else:
             assert False, 'Received MqttSuback at an inappropriate time.'
 

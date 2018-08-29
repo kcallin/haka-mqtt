@@ -289,10 +289,8 @@ class Reactor:
 
         return p
 
-    def start(self):
-        self.__assert_state_rules()
-
-        assert self.state in (ReactorState.init, ReactorState.error, ReactorState.stopped)
+    def __start(self):
+        assert self.state in INACTIVE_STATES
         self.__error = None
 
         if self.clean_session:
@@ -314,6 +312,14 @@ class Reactor:
             else:
                 self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
                 self.__abort(SocketError(e.errno))
+
+    def start(self):
+        self.__assert_state_rules()
+
+        if self.state in INACTIVE_STATES:
+            self.__start()
+        else:
+            self.__log.warning("Start called while already running!")
 
         self.__assert_state_rules()
 

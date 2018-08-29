@@ -4,6 +4,7 @@ import logging
 from binascii import b2a_hex
 from io import BytesIO
 from itertools import cycle
+import os
 
 from enum import (
     IntEnum,
@@ -370,8 +371,7 @@ class Reactor:
                 # Connection in progress.
                 self.__log.info('Connecting.')
             else:
-                self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
-                self.__abort(SocketError(e.errno))
+                self.__abort_socket_error(SocketError(e.errno))
 
     def start(self):
         self.__assert_state_rules()
@@ -503,8 +503,7 @@ class Reactor:
                     # No write space ready.
                     pass
                 else:
-                    self.__log.error('While reading socket, %s (errno=%d).  Aborting.', e.strerror, e.errno)
-                    self.__abort(SocketError(e.errno))
+                    self.__abort_socket_error(SocketError(e.errno))
 
         self.__assert_state_rules()
         return num_bytes_read
@@ -512,9 +511,7 @@ class Reactor:
     def __on_connack_accepted(self, connack):
         if connack.session_present and self.clean_session:
             # [MQTT-3.2.2-1]
-            e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
-            self.__log.error(e.description)
-            self.__abort(e)
+            self.__abort_protocol_violation('Server indicates a session is present when none was requested.')
         else:
             if self.on_connack is not None:
                 self.on_connack(self, connack)
@@ -924,11 +921,12 @@ class Reactor:
                     # No write space ready.
                     pass
                 elif e.errno == errno.EPIPE:
-                    self.__log.error("Remote unexpectedly closed the connection (errno=%d); Aborting.", e.errno)
+                    self.__log.error("Remote unexpectedly closed the connection (<%s: %d>); Aborting.",
+                                     errno.errorcode[e.errno],
+                                     e.errno)
                     self.__abort(SocketError(e.errno))
                 else:
-                    self.__log.error("%s (errno=%d); Aborting.", e.strerror, e.errno)
-                    self.__abort(SocketError(e.errno))
+                    self.__abort_socket_error(SocketError(e.errno))
 
         return num_bytes_written
 
@@ -956,6 +954,19 @@ class Reactor:
 
         if self.clean_session:
             self.__queue = []
+
+    def __abort_socket_error(self, se):
+        """
+
+        Parameters
+        ----------
+        se: SocketError
+        """
+        self.__log.error('%s (<%s: %d>).  Aborting.',
+                         os.strerror(se.errno),
+                         errno.errorcode[se.errno],
+                         se.errno)
+        self.__abort(se)
 
     def __abort_protocol_violation(self, m, *params):
         self.__log.warning(m, *params)
@@ -1010,7 +1021,7 @@ class Reactor:
             elif errno.EINPROGRESS:
                 pass
             else:
-                self.__abort(SocketError(e.errno))
+                self.__abort_socket_error(SocketError(e.errno))
         elif self.state == ReactorState.connack:
             self.__flush()
         elif self.state == ReactorState.closed:

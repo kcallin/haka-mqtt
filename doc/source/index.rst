@@ -124,15 +124,15 @@ QoS 0
    seqdiag {
       activation = none;
 
-      C; H; S;
+      C; H; Q;
 
       C -> H [label="publish call"];
-           H -> S [diagonal, label = "Publish"];
+           H -> Q [label = "Publish"];
       C <- H [label="publish return"];
 
       C [description="Client"];
       H [description="haka-mqtt"];
-      S [description="MQTT Server"];
+      Q [description="Output Queue"];
    }
 
 QoS 1
@@ -147,7 +147,7 @@ QoS 1
       C; H; Q; S;
 
       C -> H [label="publish call"];
-           H -> Q [diagonal, label = "Publish"];
+           H -> Q [label = "Publish"];
       C <- H [label="publish return"];
            H <- S [diagonal, label = "Puback"];
       C <- H [label="on_puback call"];
@@ -172,11 +172,11 @@ QoS 1 w/Disconnect
       C; H; Q; S;
 
       C -> H [label="publish call"];
-           H -> Q [diagonal, label = "Publish"];
+           H -> Q [label = "Publish"];
       C <- H [label="publish return"];
       === Disconnect ===
       ... <Contents of output queue disarded; Connection preamble> ...
-           H -> Q [diagonal, label = "Publish"];
+           H -> Q [label = "Publish"];
            H <- S [diagonal, label = "Puback"];
       C <- H [label="on_puback call"];
       C -> H [label="on_puback return"];
@@ -200,12 +200,12 @@ QoS 2
       C; H; Q; S;
 
       C -> H [label="publish call"];
-           H -> Q [diagonal, label = "Publish"];
+           H -> Q [label = "Publish"];
       C <- H [label="publish return"];
            H <- S [diagonal, label = "Pubrec"];
       C <- H [label="on_pubrec call"];
       C -> H [label="on_pubrec return"];
-           H -> Q [diagonal, label = "Pubrel"];
+           H -> Q [label = "Pubrel"];
            H <- S [diagonal, label = "Pubcomp"];
       C <- H [label="on_pubcomp call"];
       C -> H [label="on_pubcomp return"];
@@ -230,8 +230,7 @@ Subscribe
 
       C -> H [label="subscribe(topic=T)"]
            H -> Q [label="subscribe(topic=T)"]
-           H <- S [diagonal, label="Publish(topic=T)"];
-           H <- S [diagonal, label="Publish(topic=T)"];
+           H <- S [diagonal, label="Publish(topic=T)", note="Publish messages may begin arriving before suback."];
            H <- S [diagonal, label="Publish(topic=T)"];
            H <- S [diagonal, label="Suback(topic=T)"];
       C <- H [label="on_suback call"];

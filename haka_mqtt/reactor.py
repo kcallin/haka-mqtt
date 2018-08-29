@@ -156,6 +156,11 @@ class DecodeReactorError(ReactorError):
         self.description = description
 
 
+class ProtocolViolationError(ReactorError):
+    def __init__(self, description):
+        self.description = description
+
+
 class Reactor:
     def __init__(self, properties):
         """
@@ -178,7 +183,6 @@ class Reactor:
         self.__log = logging.getLogger('mqtt_reactor')
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
-        self.__publish_queue = []
 
         self.__client_id = properties.client_id
         self.__clock = properties.clock
@@ -192,9 +196,11 @@ class Reactor:
         self.socket = properties.socket
         self.endpoint = properties.endpoint
         self.__packet_id_iter = cycle(xrange(0, 2**16-1))
-        self.__queue = []
         self.__state = ReactorState.init
         self.__error = None
+
+        self.__queue = []
+        self.__in_flight_publish = []
         self.__in_flight_packets = {}
 
         self.__ping_active = False
@@ -280,7 +286,7 @@ class Reactor:
         assert self.state == ReactorState.connected
         subscribe = MqttSubscribe(self.__packet_id_iter.next(), topics)
         self.__in_flight_packets[subscribe.packet_id] = subscribe
-        self.__write_packet(subscribe)
+        self.__queue_and_flush(subscribe)
 
     def unsubscribe(self, topics):
         pass
@@ -304,11 +310,7 @@ class Reactor:
         assert self.state is ReactorState.connected
 
         p = MqttPublish(next(self.__packet_id_iter), topic, payload, False, qos, retain)
-        if qos == 1 or qos == 2:
-            self.__publish_queue.append(p)
-
-        if len(self.__publish_queue) <= 1:
-            self.__write_packet(p)
+        self.__queue_and_flush(p)
 
         self.__assert_state_rules()
 
@@ -318,10 +320,11 @@ class Reactor:
         assert self.state in INACTIVE_STATES
         self.__error = None
 
-        if self.clean_session:
-            self.__publish_queue = []
-
         self.__log.info('Starting.')
+        in_flight_packets = list(self.__in_flight_publish)
+        self.__queue = in_flight_packets + [p for p in self.__queue if p.packet_type is MqttControlPacketType.publish]
+        self.__wbuf = bytearray()
+        self.__rbuf = bytearray()
 
         try:
             self.__state = ReactorState.connecting
@@ -353,7 +356,7 @@ class Reactor:
         if self.state is ReactorState.connected:
             self.__log.info('Stopping.')
             if not self.__in_flight_packets:
-                self.__write_packet(MqttDisconnect())
+                self.__queue_and_flush(MqttDisconnect())
 
                 if not self.__wbuf:
                     self.__log.info('Shutting down outgoing stream.')
@@ -479,8 +482,8 @@ class Reactor:
             if self.on_connack is not None:
                 self.on_connack(self, connack)
 
-            if self.__publish_queue:
-                self.__write_packet(self.__publish_queue[0])
+            if self.__queue:
+                self.__queue_and_flush(self.__queue[0])
 
     def __on_connack(self, connack):
         """
@@ -535,9 +538,9 @@ class Reactor:
             if publish.qos == 0:
                 pass
             elif publish.qos == 1:
-                self.__write_packet(MqttPuback(publish.packet_id))
+                self.__queue_and_flush(MqttPuback(publish.packet_id))
             elif publish.qos == 2:
-                self.__write_packet(MqttPubrec(publish.packet_id))
+                self.__queue_and_flush(MqttPubrec(publish.packet_id))
                 # TODO: Record publish packet
                 # raise NotImplementedError()
         elif self.state is ReactorState.stopping:
@@ -587,14 +590,43 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            if self.__publish_queue and self.__publish_queue[0].packet_id == puback.packet_id:
-                del self.__publish_queue[0]
-                self.__log.info('Received %s.', repr(puback))
-                if self.on_puback is not None:
-                    self.on_puback(self, puback)
+            try:
+                publish = self.__in_flight_publish[0]
+            except IndexError:
+                publish = None
+
+            if publish:
+                if publish.packet_id == puback.packet_id:
+                    if publish.qos == 1:
+                        del self.__in_flight_publish[0]
+                        self.__log.info('Received %s.', repr(puback))
+
+                        if self.on_puback is not None:
+                            self.on_puback(self, puback)
+                    else:
+                        self.__log.warning('Received %s in response to qos=1 publish %s; aborting.',
+                                           repr(puback),
+                                           repr(publish))
+                        self.__abort(DecodeReactorError())
+                else:
+                    in_flight_mids = [publish.mid for publish in self.__in_flight_publish]
+                    if puback.packet_id in in_flight_mids:
+                        m = 'Received puback for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not next in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        puback.packet_id,
+                                                        publish.packet_id,
+                                                        puback.packet_id)
+                    else:
+                        m = 'Received puback for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        puback.packet_id,
+                                                        publish.packet_id,
+                                                        puback.packet_id)
             else:
-                self.__log.warning('Received %s for a mid that is not in-flight; aborting.', repr(puback))
-                self.__abort(DecodeReactorError())
+                self.__abort_protocol_violation('Received %s for a publish that was not in-flight; aborting.',
+                                                repr(puback))
         else:
             assert False, 'Received MqttPuback at an inappropriate time.'
 
@@ -610,7 +642,7 @@ class Reactor:
             self.__log.info('Received %s.', repr(pubrel))
             if self.on_pubrel is not None:
                 self.on_pubrel(self, pubrel)
-            self.__write_packet(MqttPubcomp(pubrel.packet_id))
+            self.__queue_and_flush(MqttPubcomp(pubrel.packet_id))
         else:
             assert False, 'Received MqttPubrel at an inappropriate time.'
 
@@ -652,7 +684,52 @@ class Reactor:
         else:
             assert False, 'Received muted_remote at an inappropriate time.'
 
-    def __write_packet(self, packet):
+    def __launch_next_queued_packet(self):
+        if self.__queue:
+            packet = self.__queue.pop(0)
+
+            # if packet.packet_type is MqttControlPacketType.connect:
+            #     pass
+            # elif packet.packet_type is MqttControlPacketType.connack:
+            #     pass
+            if packet.packet_type is MqttControlPacketType.publish:
+                self.__in_flight_publish.append(packet)
+            elif packet.packet_type is MqttControlPacketType.puback:
+                pass
+            elif packet.packet_type is MqttControlPacketType.pubrec:
+                pass
+            elif packet.packet_type is MqttControlPacketType.pubrel:
+                pass
+            elif packet.packet_type is MqttControlPacketType.pubcomp:
+                pass
+            elif packet.packet_type is MqttControlPacketType.subscribe:
+                pass
+            # elif packet.packet_type is MqttControlPacketType.suback:
+            #     pass
+            elif packet.packet_type is MqttControlPacketType.unsubscribe:
+                pass
+            elif packet.packet_type is MqttControlPacketType.unsuback:
+                pass
+            elif packet.packet_type is MqttControlPacketType.pingreq:
+                pass
+            elif packet.packet_type is MqttControlPacketType.pingresp:
+                pass
+            elif packet.packet_type is MqttControlPacketType.disconnect:
+                pass
+
+            self.__log.info('Launching message %s.', repr(packet))
+            bio = BytesIO()
+            packet.encode(bio)
+            buf = bio.getvalue()
+            self.__log.debug('Writing %d bytes 0x%s.', len(buf), HexOnStr(buf))
+            self.__wbuf.extend(buf)
+            num_bytes_flushed = self.__flush()
+        else:
+            num_bytes_flushed = 0
+
+        return num_bytes_flushed
+
+    def __queue_and_flush(self, packet):
         """
 
         Parameters
@@ -664,13 +741,15 @@ class Reactor:
         int
             Returns number of bytes flushed to underlying socket.
         """
-        self.__log.info('Sending %s.', repr(packet))
-        bio = BytesIO()
-        packet.encode(bio)
-        buf = bio.getvalue()
-        self.__log.debug('Sending %d bytes 0x%s.', len(buf), HexOnStr(buf))
-        self.__wbuf.extend(buf)
-        return self.__flush()
+        self.__queue.append(packet)
+
+        if self.__wbuf:
+            num_bytes_flushed = 0
+            self.__log.info('Queuing %s for delivery.', repr(packet))
+        else:
+            num_bytes_flushed = self.__launch_next_queued_packet()
+
+        return num_bytes_flushed
 
     def __on_connect(self):
         assert self.state == ReactorState.connecting
@@ -679,7 +758,12 @@ class Reactor:
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period, self.__keepalive_abort_timeout)
 
         self.__state = ReactorState.connack
-        self.__write_packet(MqttConnect(self.client_id, self.clean_session, self.keepalive_period))
+
+        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
+        self.__queue.insert(0, connect)
+
+        assert not self.__wbuf
+        num_bytes_flushed = self.__launch_next_queued_packet()
 
     def __flush(self):
         """Calls send exactly once; returning the number of bytes written.
@@ -731,7 +815,11 @@ class Reactor:
             self.__keepalive_due_deadline = None
 
         if self.clean_session:
-            self.__publish_queue = []
+            self.__queue = []
+
+    def __abort_protocol_violation(self, m, *params):
+        self.__log.warning(m, *params)
+        self.__abort(ProtocolViolationError(m % params))
 
     def __abort(self, e):
         self.__terminate()
@@ -749,7 +837,7 @@ class Reactor:
             ReactorState.stopping,
         )
 
-        self.__write_packet(MqttPingreq())
+        self.__queue_and_flush(MqttPingreq())
         self.__keepalive_due_deadline = None
 
         self.__assert_state_rules()

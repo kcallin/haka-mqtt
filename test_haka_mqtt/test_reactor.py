@@ -188,6 +188,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_start(self):
         self.start_to_connack()
 
+        # Subscribe to topic
         topic_name = 'bear_topic'
         p = MqttSubscribe(0, [MqttTopic(topic_name, 0)])
         self.set_send_packet_side_effect(p)
@@ -195,18 +196,22 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
+        # Acknowledge subscription to new topic
         suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
         self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
+        # Publish new message
         p = MqttPublish(1, topic_name, 'outgoing', False, 1, False)
         self.set_send_packet_side_effect(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
+        # Acknowledge new message
         p = MqttPuback(p.packet_id)
         self.read_packet_then_block(p)
+        self.socket.send.assert_not_called()
 
         publish = MqttPublish(1, topic_name, 'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)

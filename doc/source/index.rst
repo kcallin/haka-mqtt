@@ -122,6 +122,8 @@ QoS 0
    :desctable:
 
    seqdiag {
+      activation = none;
+
       C; H; S;
 
       C -> H [label="publish call"];
@@ -142,10 +144,10 @@ QoS 1
    seqdiag {
       activation = none;
 
-      C; H; S;
+      C; H; Q; S;
 
       C -> H [label="publish call"];
-           H -> S [diagonal, label = "Publish"];
+           H -> Q [diagonal, label = "Publish"];
       C <- H [label="publish return"];
            H <- S [diagonal, label = "Puback"];
       C <- H [label="on_puback call"];
@@ -153,6 +155,35 @@ QoS 1
 
       C [description="Client"];
       H [description="haka-mqtt"];
+      Q [description="Output Queue"];
+      S [description="MQTT Server"];
+   }
+
+
+QoS 1 w/Disconnect
+-------------------
+
+.. seqdiag::
+   :desctable:
+
+   seqdiag {
+      activation = none;
+
+      C; H; Q; S;
+
+      C -> H [label="publish call"];
+           H -> Q [diagonal, label = "Publish"];
+      C <- H [label="publish return"];
+      === Disconnect ===
+      ... <Contents of output queue disarded; Connection preamble> ...
+           H -> Q [diagonal, label = "Publish"];
+           H <- S [diagonal, label = "Puback"];
+      C <- H [label="on_puback call"];
+      C -> H [label="on_puback return"];
+
+      C [description="Client"];
+      H [description="haka-mqtt"];
+      Q [description="Output Queue"];
       S [description="MQTT Server"];
    }
 
@@ -166,21 +197,22 @@ QoS 2
    seqdiag {
       activation = none;
 
-      C; H; S;
+      C; H; Q; S;
 
       C -> H [label="publish call"];
-           H -> S [diagonal, label = "Publish"];
+           H -> Q [diagonal, label = "Publish"];
       C <- H [label="publish return"];
            H <- S [diagonal, label = "Pubrec"];
       C <- H [label="on_pubrec call"];
       C -> H [label="on_pubrec return"];
-           H -> S [diagonal, label = "Pubrel"];
+           H -> Q [diagonal, label = "Pubrel"];
            H <- S [diagonal, label = "Pubcomp"];
       C <- H [label="on_pubcomp call"];
       C -> H [label="on_pubcomp return"];
 
       C [description="Client"];
       H [description="haka-mqtt"];
+      Q [description="Output Queue"];
       S [description="MQTT Server"];
    }
 

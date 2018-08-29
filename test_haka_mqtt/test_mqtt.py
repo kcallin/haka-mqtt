@@ -136,13 +136,16 @@ class TestSubackCodec(unittest.TestCase):
 
 
 class TestPublish(unittest.TestCase):
-    def test_subscribe(self):
-        subscribe = mqtt.MqttPublish(3, 'flugelhorn', 'silly_payload', False, 2, False)
+    def test_publish(self):
+        publish = mqtt.MqttPublish(3, 'flugelhorn', 'silly_payload', False, 2, False)
         bio = BytesIO()
-        subscribe.encode(bio)
+        publish.encode(bio)
         buf = bytearray(bio.getvalue())
 
-        recovered = mqtt.MqttPublish.decode(buf)
+        num_bytes_consumed, recovered = mqtt.MqttPublish.decode(buf)
+        self.assertEqual(len(buf), num_bytes_consumed)
+        self.assertEqual(publish.packet_id, recovered.packet_id)
+        self.assertEqual(publish.payload, recovered.payload)
 
 
 class TestPubrec(unittest.TestCase):

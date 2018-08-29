@@ -200,8 +200,12 @@ class Reactor:
         self.__error = None
 
         self.__queue = []
+        # Publish packets must be ack'd in order of publishing
+        # [MQTT-4.6.0-2], [MQTT-4.6.0-3]
         self.__in_flight_publish = []
-        self.__in_flight_packets = {}
+
+        # No specific requirement exists for subscribe suback ordering.
+        self.__in_flight_subscribe = {}
 
         self.__ping_active = False
         self.__scheduler = properties.scheduler
@@ -285,7 +289,6 @@ class Reactor:
         """
         assert self.state == ReactorState.connected
         subscribe = MqttSubscribe(self.__packet_id_iter.next(), topics)
-        self.__in_flight_packets[subscribe.packet_id] = subscribe
         self.__queue_and_flush(subscribe)
 
     def unsubscribe(self, topics):
@@ -355,7 +358,7 @@ class Reactor:
         self.__assert_state_rules()
         if self.state is ReactorState.connected:
             self.__log.info('Stopping.')
-            if not self.__in_flight_packets:
+            if not self.__in_flight_subscribe:
                 self.__queue_and_flush(MqttDisconnect())
 
                 if not self.__wbuf:
@@ -518,9 +521,7 @@ class Reactor:
             else:
                 assert False
         else:
-            m = 'Received connack at an inappropriate time.'
-            self.__log.error(m)
-            self.__abort(DecodeReactorError(m))
+            self.__abort_protocol_violation('Received connack at an inappropriate time.')
 
     def __on_publish(self, publish):
         """
@@ -566,7 +567,7 @@ class Reactor:
         """
         if self.state is ReactorState.connected:
             try:
-                self.__in_flight_packets.pop(suback.packet_id)
+                self.__in_flight_subscribe.pop(suback.packet_id)
                 in_flight = True
             except KeyError:
                 in_flight = False
@@ -576,8 +577,7 @@ class Reactor:
                 if self.on_suback is not None:
                     self.on_suback(self, suback)
             else:
-                self.__log.warning('Received %s for a mid that is not in-flight; aborting.', repr(suback))
-                self.__abort(DecodeReactorError())
+                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.', repr(suback))
         else:
             assert False, 'Received MqttSuback at an inappropriate time.'
 
@@ -604,10 +604,9 @@ class Reactor:
                         if self.on_puback is not None:
                             self.on_puback(self, puback)
                     else:
-                        self.__log.warning('Received %s in response to qos=1 publish %s; aborting.',
-                                           repr(puback),
-                                           repr(publish))
-                        self.__abort(DecodeReactorError())
+                        self.__abort_protocol_violation('Received %s in response to qos=1 publish %s; aborting.',
+                                                        repr(puback),
+                                                        repr(publish))
                 else:
                     in_flight_mids = [publish.mid for publish in self.__in_flight_publish]
                     if puback.packet_id in in_flight_mids:
@@ -703,7 +702,7 @@ class Reactor:
             elif packet.packet_type is MqttControlPacketType.pubcomp:
                 pass
             elif packet.packet_type is MqttControlPacketType.subscribe:
-                pass
+                self.__in_flight_subscribe[packet.packet_id] = packet
             # elif packet.packet_type is MqttControlPacketType.suback:
             #     pass
             elif packet.packet_type is MqttControlPacketType.unsubscribe:

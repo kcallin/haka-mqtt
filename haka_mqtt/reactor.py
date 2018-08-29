@@ -138,6 +138,9 @@ class SocketError(ReactorError):
     def __repr__(self):
         return 'SocketError({}<{}>)'.format(errno.errorcode[self.errno], self.errno)
 
+    def __eq__(self, other):
+        return self.errno == other.errno
+
 
 class AddressingReactorError(ReactorError):
     """
@@ -348,7 +351,8 @@ class Reactor:
         self.__error = None
 
         self.__log.info('Starting.')
-        in_flight_packets = list(self.__in_flight_publish)
+        # TODO: Does this fulfill MQTT ordering requirements?
+        in_flight_packets = self.__in_flight_publish + self.__in_flight_pubrel
         self.__queue = in_flight_packets + [p for p in self.__queue if p.packet_type is MqttControlPacketType.publish]
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
@@ -479,27 +483,28 @@ class Reactor:
         self.__assert_state_rules()
 
         num_bytes_read = 0
-        try:
-            new_bytes = self.socket.recv(4096)
-            num_bytes_read = len(new_bytes)
-            if new_bytes:
-                self.__on_recv_bytes(new_bytes)
-            else:
-                self.__on_muted_remote()
+        if self.state not in INACTIVE_STATES:
+            try:
+                new_bytes = self.socket.recv(4096)
+                num_bytes_read = len(new_bytes)
+                if new_bytes:
+                    self.__on_recv_bytes(new_bytes)
+                else:
+                    self.__on_muted_remote()
 
-        except UnderflowDecodeError:
-            # Not enough header bytes.
-            pass
-        except DecodeError as e:
-            self.__log.error('Error decoding message (%s)', str(e))
-            self.__abort(DecodeReactorError(str(e)))
-        except socket.error as e:
-            if e.errno == errno.EWOULDBLOCK:
-                # No write space ready.
+            except UnderflowDecodeError:
+                # Not enough header bytes.
                 pass
-            else:
-                self.__log.error('While reading socket, %s (errno=%d).  Aborting.', e.strerror, e.errno)
-                self.__abort(SocketError(e.errno))
+            except DecodeError as e:
+                self.__log.error('Error decoding message (%s)', str(e))
+                self.__abort(DecodeReactorError(str(e)))
+            except socket.error as e:
+                if e.errno == errno.EWOULDBLOCK:
+                    # No write space ready.
+                    pass
+                else:
+                    self.__log.error('While reading socket, %s (errno=%d).  Aborting.', e.strerror, e.errno)
+                    self.__abort(SocketError(e.errno))
 
         self.__assert_state_rules()
         return num_bytes_read
@@ -514,8 +519,7 @@ class Reactor:
             if self.on_connack is not None:
                 self.on_connack(self, connack)
 
-            if self.__queue:
-                self.__queue_and_flush(self.__queue[0])
+            self.__launch_next_queued_packet()
 
     def __on_connack(self, connack):
         """

@@ -30,7 +30,7 @@ from haka_mqtt.reactor import (
     ReactorProperties,
     ReactorState,
     KeepaliveTimeoutReactorError,
-    MqttConnectFail, INACTIVE_STATES)
+    MqttConnectFail, INACTIVE_STATES, SocketError)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -38,6 +38,10 @@ def buffer_packet(packet):
     bio = BytesIO()
     packet.encode(bio)
     return bio.getvalue()
+
+
+def socket_error(errno):
+    return socket.error(errno, os.strerror(errno))
 
 
 class TestReactor(unittest.TestCase):
@@ -145,7 +149,7 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
     def start_to_connack(self):
-        self.assertEqual(ReactorState.init, self.reactor.state)
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
@@ -385,42 +389,86 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
 
         self.reactor.terminate()
 
-    def test_publish_disconnect_connect_republish_qos1(self):
+    def test_publish_disconnect_qos2(self):
         self.start_to_connack()
 
-        TOPIC = 'topic'
-        expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
-        self.set_send_packet_side_effect(expected_publish)
-        actual_publish = self.reactor.publish(expected_publish.topic,
-                                              expected_publish.payload,
-                                              expected_publish.qos,
-                                              expected_publish.retain)
-        self.assertFalse(self.reactor.want_write())
-        self.assertEqual(expected_publish, actual_publish)
+        publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
+        se = socket_error(errno.ECONNABORTED)
+        self.set_send_side_effect([se])
+        actual_publish = self.reactor.publish(publish.topic,
+                                       publish.payload,
+                                       publish.qos,
+                                       publish.retain)
+        self.assertEqual(publish, actual_publish)
+        self.assertEqual(self.reactor.state, ReactorState.error)
+        self.assertEqual(self.reactor.error, SocketError(se.errno))
         self.socket.send.reset_mock()
+
+        self.start_to_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        # TODO: dupe flag should be set.
+        self.set_send_packet_side_effect(publish)
+        self.read_packet_then_block(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.socket.send.assert_called_once_with(buffer_packet(publish))
+        self.socket.send.reset_mock()
+
+        pubrec = MqttPubrec(publish.packet_id)
+        pubrel = MqttPubrel(publish.packet_id)
+        self.set_send_packet_side_effect(pubrel)
+        self.read_packet_then_block(pubrec)
+        self.on_pubrec.assert_called_once()
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel))
+        self.socket.send.reset_mock()
+
+        pubcomp = MqttPubcomp(publish.packet_id)
+        self.read_packet_then_block(pubcomp)
+        self.on_pubcomp.assert_called_once()
+        self.socket.send.assert_not_called()
 
         self.reactor.terminate()
 
-        self.assertEqual(ReactorState.stopped, self.reactor.state)
+    def test_pubrel_disconnect_qos2(self):
+        self.start_to_connack()
 
-        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
-        self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
-        self.assertEqual(ReactorState.connecting, self.reactor.state)
-        self.assertFalse(self.reactor.want_read())
-        self.assertTrue(self.reactor.want_write())
+        publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
+        self.set_send_packet_side_effect(publish)
+        actual_publish = self.reactor.publish(publish.topic,
+                                       publish.payload,
+                                       publish.qos,
+                                       publish.retain)
+        self.socket.send.reset_mock()
+        self.assertFalse(self.reactor.want_write())
+        self.assertEqual(publish, actual_publish)
 
-        self.socket.getsockopt.return_value = 0
-        self.send_packet(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
-        self.assertEqual(self.reactor.state, ReactorState.connack)
+        pubrec = MqttPubrec(publish.packet_id)
+        pubrel = MqttPubrel(publish.packet_id)
+        se = socket_error(errno.ECONNABORTED)
+        self.set_send_side_effect([se])
+        self.read_packet_then_block(pubrec)
+        self.on_pubrec.assert_called_once()
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel))
+        self.socket.send.reset_mock()
+
+        self.assertEqual(self.reactor.state, ReactorState.error)
+        self.assertEqual(self.reactor.error, SocketError(se.errno))
+
+        self.start_to_connect()
 
         connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_send_side_effect([len(buffer_packet(expected_publish))])
+        self.set_send_packet_side_effect(pubrel)
         self.read_packet_then_block(connack)
-        self.set_send_packet_side_effect(expected_publish)
         self.assertEqual(self.reactor.state, ReactorState.connected)
-        self.socket.send.assert_called_once_with(buffer_packet(expected_publish))
-        self.assertFalse(self.reactor.want_write())
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel))
+        self.socket.send.reset_mock()
+
+        pubcomp = MqttPubcomp(publish.packet_id)
+        self.read_packet_then_block(pubcomp)
+        self.on_pubcomp.assert_called_once()
+        self.socket.send.assert_not_called()
+
+        self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.reactor.terminate()
 

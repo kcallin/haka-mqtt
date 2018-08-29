@@ -225,6 +225,10 @@ class Reactor:
         # No specific requirement exists for subscribe suback ordering.
         self.__in_flight_subscribe = {}
 
+        # It MUST send PUBREL packets in the order in which the corresponding PUBREC packets were
+        # received (QoS 2 messages) [MQTT-4.6.0-4]
+        self.__in_flight_pubrel = []
+
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
@@ -452,6 +456,10 @@ class Reactor:
                     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
                 elif header.packet_type == MqttControlPacketType.pubrel:
                     self.__on_pubrel(self.__decode_packet_body(header, num_header_bytes, MqttPubrel))
+                elif header.packet_type == MqttControlPacketType.pubcomp:
+                    self.__on_pubcomp(self.__decode_packet_body(header, num_header_bytes, MqttPubcomp))
+                elif header.packet_type == MqttControlPacketType.pubrec:
+                    self.__on_pubrec(self.__decode_packet_body(header, num_header_bytes, MqttPubrec))
                 else:
                     m = 'Received unsupported message type {}.'.format(header.packet_type)
                     self.__log.error(m)
@@ -662,6 +670,100 @@ class Reactor:
         else:
             assert False, 'Received MqttPuback at an inappropriate time.'
 
+    def __on_pubrec(self, pubrec):
+        """
+
+        Parameters
+        ----------
+        suback: MqttPubrec
+
+        """
+        if self.state is ReactorState.connected:
+            try:
+                publish = self.__in_flight_publish[0]
+            except IndexError:
+                publish = None
+
+            if publish:
+                if publish.packet_id == pubrec.packet_id:
+                    if publish.qos == 2:
+                        del self.__in_flight_publish[0]
+                        self.__log.info('Received %s.', repr(pubrec))
+
+                        if self.on_pubrec is not None:
+                            self.on_pubrec(self, pubrec)
+
+                        self.__queue_and_flush(MqttPubrel(pubrec.packet_id))
+                    else:
+                        self.__abort_protocol_violation('Received %s in response to qos=%d publish %s; aborting.',
+                                                        repr(pubrec),
+                                                        publish.qos,
+                                                        repr(publish))
+                else:
+                    in_flight_mids = [publish.mid for publish in self.__in_flight_publish]
+                    if pubrec.packet_id in in_flight_mids:
+                        m = 'Received pubrec for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not next in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        pubrec.packet_id,
+                                                        publish.packet_id,
+                                                        pubrec.packet_id)
+                    else:
+                        m = 'Received pubrec for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        pubrec.packet_id,
+                                                        publish.packet_id,
+                                                        pubrec.packet_id)
+            else:
+                self.__abort_protocol_violation('Received %s for a publish that was not in-flight; aborting.',
+                                                repr(pubrec))
+        else:
+            raise NotImplementedError()
+
+    def __on_pubcomp(self, pubcomp):
+        """
+
+        Parameters
+        ----------
+        suback: MqttPubrec
+
+        """
+        if self.state is ReactorState.connected:
+            try:
+                pubrel = self.__in_flight_pubrel[0]
+            except IndexError:
+                pubrel = None
+
+            if pubrel:
+                if pubrel.packet_id == pubcomp.packet_id:
+                    del self.__in_flight_pubrel[0]
+                    self.__log.info('Received %s.', repr(pubcomp))
+
+                    if self.on_pubcomp is not None:
+                        self.on_pubcomp(self, pubcomp)
+                else:
+                    in_flight_packet_ids = [pubrel.packet_id for pubrel in self.__in_flight_pubrel]
+                    if pubcomp.packet_id in in_flight_packet_ids:
+                        m = 'Received pubcomp for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not next in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        pubcomp.packet_id,
+                                                        pubrel.packet_id,
+                                                        pubcomp.packet_id)
+                    else:
+                        m = 'Received pubcomp for mid=%d when mid=%d was expected;' \
+                            ' mid=%d was not in-flight; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        pubcomp.packet_id,
+                                                        pubrel.packet_id,
+                                                        pubcomp.packet_id)
+            else:
+                self.__abort_protocol_violation('Received %s for a pubrel that was not in-flight; aborting.',
+                                                repr(pubcomp))
+        else:
+            raise NotImplementedError()
+
     def __on_pubrel(self, pubrel):
         """
 
@@ -733,7 +835,7 @@ class Reactor:
             elif packet.packet_type is MqttControlPacketType.pubrec:
                 pass
             elif packet.packet_type is MqttControlPacketType.pubrel:
-                pass
+                self.__in_flight_pubrel.append(packet)
             elif packet.packet_type is MqttControlPacketType.pubcomp:
                 pass
             elif packet.packet_type is MqttControlPacketType.subscribe:

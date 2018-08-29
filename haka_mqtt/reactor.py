@@ -475,11 +475,12 @@ class Reactor:
             e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
             self.__log.error(e.description)
             self.__abort(e)
-        elif self.on_connack is not None:
-            self.on_connack(self, connack)
+        else:
+            if self.on_connack is not None:
+                self.on_connack(self, connack)
 
-        if self.__publish_queue:
-            self.__write_packet(self.__publish_queue[0])
+            if self.__publish_queue:
+                self.__write_packet(self.__publish_queue[0])
 
     def __on_connack(self, connack):
         """

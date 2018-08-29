@@ -80,6 +80,15 @@ class ReactorError:
     pass
 
 
+class MqttConnectFail(ReactorError):
+    def __init__(self, result):
+        assert result != ConnackResult.accepted
+        self.result = result
+
+    def __eq__(self, other):
+        return self.result == other.result
+
+
 class ProtocolViolationReactorError(ReactorError):
     def __init__(self, desc):
         self.description = desc
@@ -460,6 +469,18 @@ class Reactor:
         self.__assert_state_rules()
         return num_bytes_read
 
+    def __on_connack_accepted(self, connack):
+        if connack.session_present and self.clean_session:
+            # [MQTT-3.2.2-1]
+            e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
+            self.__log.error(e.description)
+            self.__abort(e)
+        elif self.on_connack is not None:
+            self.on_connack(self, connack)
+
+        if self.__publish_queue:
+            self.__write_packet(self.__publish_queue[0])
+
     def __on_connack(self, connack):
         """
 
@@ -471,31 +492,27 @@ class Reactor:
             self.__log.info('Received %s.', repr(connack))
             self.__state = ReactorState.connected
 
-            # accepted = 0
-            # fail_bad_protocol_version = 1
-            # fail_bad_client_id = 2
-            # fail_server_unavailable = 3
-            # fail_bad_username_or_password = 4
-            # fail_not_authorized = 5
-
             if connack.return_code == ConnackResult.accepted:
-                pass
+                # The first packet sent from the Server to the Client MUST
+                # be a CONNACK Packet [MQTT-3.2.0-1].
+                self.__on_connack_accepted(connack)
+            elif connack.return_code == ConnackResult.fail_bad_protocol_version:
+                self.__log.error('Bad protocol version; connect failed.')
+                self.__abort(MqttConnectFail(connack.return_code))
             elif connack.return_code == ConnackResult.fail_bad_client_id:
-                pass
-
-            # The first packet sent from the Server to the Client MUST
-            # be a CONNACK Packet [MQTT-3.2.0-1].
-
-            if connack.session_present and self.clean_session:
-                # [MQTT-3.2.2-1]
-                e = ProtocolViolationReactorError('Server indicates a session is present when none was requested.')
-                self.__log.error(e.description)
-                self.__abort(e)
-            elif self.on_connack is not None:
-                self.on_connack(self, connack)
-
-            if self.__publish_queue:
-                self.__write_packet(self.__publish_queue[0])
+                self.__log.error('Bad client ID; connect failed.')
+                self.__abort(MqttConnectFail(connack.return_code))
+            elif connack.return_code == ConnackResult.fail_server_unavailable:
+                self.__log.error('Server unavailable; connect failed.')
+                self.__abort(MqttConnectFail(connack.return_code))
+            elif connack.return_code == ConnackResult.fail_bad_username_or_password:
+                self.__log.error('Bad username or password; connect failed.')
+                self.__abort(MqttConnectFail(connack.return_code))
+            elif connack.return_code == ConnackResult.fail_not_authorized:
+                self.__log.error('Not authorized; connect failed.')
+                self.__abort(MqttConnectFail(connack.return_code))
+            else:
+                assert False
         else:
             m = 'Received connack at an inappropriate time.'
             self.__log.error(m)

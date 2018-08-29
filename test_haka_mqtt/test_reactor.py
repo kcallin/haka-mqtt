@@ -29,8 +29,8 @@ from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
     ReactorState,
-    KeepaliveTimeoutReactorError
-)
+    KeepaliveTimeoutReactorError,
+    MqttConnectFail, INACTIVE_STATES)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -130,7 +130,7 @@ class TestReactor(unittest.TestCase):
         self.assertFalse(self.reactor.want_write())
 
     def start_to_connect(self):
-        self.assertEqual(ReactorState.init, self.reactor.state)
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
@@ -265,6 +265,20 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.socket.send.assert_called_once_with(buffer_packet(puback))
 
         self.reactor.terminate()
+
+
+class TestConnackFail(TestReactor, unittest.TestCase):
+    def test_connack_failures(self):
+        fail_codes = [r for r in ConnackResult if r != ConnackResult.accepted]
+        fail_codes.sort()
+
+        for fail_code in fail_codes:
+            self.start_to_connect()
+
+            connack = MqttConnack(False, fail_code)
+            self.read_packet_then_block(connack)
+            self.assertEqual(self.reactor.state, ReactorState.error)
+            self.assertEqual(self.reactor.error, MqttConnectFail(fail_code))
 
 
 class TestSendPathQos1(TestReactor, unittest.TestCase):

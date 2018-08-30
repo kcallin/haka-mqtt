@@ -954,9 +954,6 @@ class Reactor:
             self.__keepalive_due_deadline.cancel()
             self.__keepalive_due_deadline = None
 
-        if self.clean_session:
-            self.__queue = []
-
     def __abort_socket_error(self, se):
         """
 
@@ -1014,23 +1011,18 @@ class Reactor:
     def write(self):
         self.__assert_state_rules()
 
-        if self.state == ReactorState.init:
-            pass
-        elif self.state == ReactorState.connecting:
-            e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-            if e == 0:
-                self.__on_connect()
-            elif errno.EINPROGRESS:
-                pass
+        if self.state not in INACTIVE_STATES:
+            if self.state == ReactorState.connecting:
+                e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if e == 0:
+                    self.__on_connect()
+                elif errno.EINPROGRESS:
+                    pass
+                else:
+                    self.__abort_socket_error(SocketError(e.errno))
+            elif self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
+                self.__flush()
             else:
-                self.__abort_socket_error(SocketError(e.errno))
-        elif self.state == ReactorState.connack:
-            self.__flush()
-        elif self.state == ReactorState.closed:
-            pass
-        elif self.state == ReactorState.error:
-            pass
-        else:
-            raise NotImplementedError()
+                raise NotImplementedError(self.state)
 
         self.__assert_state_rules()

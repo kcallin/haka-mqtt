@@ -31,7 +31,7 @@ class ReactorProperties(object):
     """
     Attributes
     ----------
-    socket: socket.socket
+    socket_factory: haka_mqtt.socket_factory.SocketFactory
     client_id: str
     clock:
     keepalive_period: int
@@ -45,7 +45,7 @@ class ReactorProperties(object):
         Maximum number of in-flight publish messages.
     """
     def __init__(self):
-        self.socket = None
+        self.socket_factory = None
         self.endpoint = None
         self.client_id = None
         self.clock = SystemClock()
@@ -192,7 +192,7 @@ class Reactor:
         """
 
         assert properties.client_id is not None
-        assert properties.socket is not None
+        assert properties.socket_factory is not None
         assert properties.endpoint is not None
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
@@ -214,7 +214,8 @@ class Reactor:
         self.__clean_session = properties.clean_session
         self.__max_inflight_publish = properties.max_inflight_publish
 
-        self.socket = properties.socket
+        self.__socket_factory = properties.socket_factory
+        self.socket = None
         self.endpoint = properties.endpoint
         self.__packet_id_iter = cycle(xrange(0, 2**16-1))
         self.__state = ReactorState.init
@@ -358,6 +359,7 @@ class Reactor:
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
         self.subscriptions = {}
+        self.socket = self.__socket_factory()
 
         try:
             self.__state = ReactorState.connecting

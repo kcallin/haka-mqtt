@@ -5,7 +5,8 @@ from select import select
 from time import time
 
 from haka_mqtt.mqtt import MqttTopic
-from haka_mqtt.reactor import ReactorProperties, SystemClock, Reactor, ReactorState
+from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
+from haka_mqtt.clock import SystemClock
 from haka_mqtt.scheduler import Scheduler
 
 TOPIC = 'bubbles'
@@ -52,8 +53,14 @@ def on_puback(reactor, p):
     p: MqttPuback
     """
     global count
+    global limit
 
-    if count < 10:
+
+    if count == 50:
+        reactor.terminate()
+        reactor.start()
+        count += 1
+    elif count < 100:
         count += 1
         reactor.publish(TOPIC, str(count), 1)
     else:
@@ -71,16 +78,20 @@ def on_publish(reactor, p):
     pass
 
 
-def main():
-    logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+def create_socket():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(0)
+    return sock
+
+
+def main():
+    logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
     endpoint = ('test.mosquitto.org', 1883)
     clock = SystemClock()
 
     scheduler = Scheduler()
     p = ReactorProperties()
-    p.socket = sock
+    p.socket_factory = create_socket
     p.endpoint = endpoint
     p.clock = clock
     p.keepalive_period = 20
@@ -132,6 +143,9 @@ def main():
             deadline_miss_duration = time_since_last_poll - scheduler.remaining()
             if deadline_miss_duration > 0:
                 log.debug("Missed poll deadline by %fs.", deadline_miss_duration)
+
+        if reactor.state in INACTIVE_STATES:
+            reactor.start()
 
         scheduler.poll(time_since_last_poll)
         last_poll_time = poll_time

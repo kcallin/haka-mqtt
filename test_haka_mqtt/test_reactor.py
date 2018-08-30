@@ -47,7 +47,7 @@ def socket_error(errno):
 class TestReactor(unittest.TestCase):
     def reactor_properties(self):
         p = ReactorProperties()
-        p.socket = self.socket
+        p.socket_factory = lambda: self.socket
         p.endpoint = self.endpoint
         p.client_id = self.client_id
         p.keepalive_period = self.keepalive_period

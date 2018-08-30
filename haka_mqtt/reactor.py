@@ -678,40 +678,30 @@ class Reactor:
             except IndexError:
                 publish = None
 
-            if publish:
-                if publish.packet_id == pubrec.packet_id:
-                    if publish.qos == 2:
-                        del self.__in_flight_publish[0]
-                        self.__log.info('Received %s.', repr(pubrec))
+            if publish and publish.packet_id == pubrec.packet_id:
+                if publish.qos == 2:
+                    del self.__in_flight_publish[0]
+                    self.__log.info('Received %s.', repr(pubrec))
 
-                        if self.on_pubrec is not None:
-                            self.on_pubrec(self, pubrec)
+                    if self.on_pubrec is not None:
+                        self.on_pubrec(self, pubrec)
 
-                        self.__queue_and_flush(MqttPubrel(pubrec.packet_id))
-                    else:
-                        self.__abort_protocol_violation('Received %s in response to qos=%d publish %s; aborting.',
-                                                        repr(pubrec),
-                                                        publish.qos,
-                                                        repr(publish))
+                    self.__queue_and_flush(MqttPubrel(pubrec.packet_id))
                 else:
-                    in_flight_mids = [publish.mid for publish in self.__in_flight_publish]
-                    if pubrec.packet_id in in_flight_mids:
-                        m = 'Received pubrec for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not next in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        pubrec.packet_id,
-                                                        publish.packet_id,
-                                                        pubrec.packet_id)
-                    else:
-                        m = 'Received pubrec for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        pubrec.packet_id,
-                                                        publish.packet_id,
-                                                        pubrec.packet_id)
+                    self.__abort_protocol_violation('Received %s in response to qos=%d publish %s; aborting.',
+                                                    ReprOnStr(pubrec),
+                                                    publish.qos,
+                                                    ReprOnStr(publish))
+            elif publish and pubrec.packet_id in [p.packet_id for p in self.__in_flight_publish]:
+                m = 'Received %s when packet_id=%d was next-in-flight; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(pubrec),
+                                                publish.packet_id)
             else:
-                self.__abort_protocol_violation('Received %s for a publish that was not in-flight; aborting.',
-                                                repr(pubrec))
+                m = 'Received %s when packet_id=%d was not in-flight; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(pubrec),
+                                                pubrec.packet_id)
         else:
             raise NotImplementedError()
 

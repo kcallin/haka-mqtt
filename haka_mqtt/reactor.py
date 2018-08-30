@@ -102,7 +102,7 @@ class TopicSubscription(object):
         self.__granted_max_qos = qos
 
 
-class ReactorError:
+class ReactorError(object):
     pass
 
 
@@ -128,14 +128,14 @@ class KeepaliveTimeoutReactorError(ReactorError):
         return isinstance(other, KeepaliveTimeoutReactorError)
 
     def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, self.description)
+        return '{}()'.format(self.__class__.__name__)
 
 
 class SocketError(ReactorError):
     """
     Attributes
     ----------
-    error: errno
+    errno: int
     """
     def __init__(self, errno_val):
         """
@@ -155,17 +155,11 @@ class SocketError(ReactorError):
 
 
 class AddressingReactorError(ReactorError):
-    """
-    Attributes
-    ----------
-    errno: int
-    description: str
-    """
     def __init__(self, gaierror):
         """
         Parameters
         ----------
-        errno: socket.gaierror
+        gaierror: socket.gaierror
         """
         assert isinstance(gaierror, socket.gaierror)
         self.__errno = gaierror.errno
@@ -173,10 +167,22 @@ class AddressingReactorError(ReactorError):
 
     @property
     def errno(self):
+        """
+
+        Returns
+        -------
+        int
+        """
         return self.__errno
 
     @property
     def description(self):
+        """
+
+        Returns
+        -------
+        str
+        """
         return self.__desc
 
     def __repr__(self):
@@ -452,7 +458,8 @@ class Reactor:
         self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
         self.__keepalive_abort_deadline.cancel()
-        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period, self.__keepalive_abort_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
+                                                               self.__keepalive_abort_timeout)
 
         self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
@@ -641,7 +648,7 @@ class Reactor:
 
         Parameters
         ----------
-        suback: MqttPuback
+        puback: MqttPuback
 
         """
         if self.state is ReactorState.connected:
@@ -680,8 +687,7 @@ class Reactor:
 
         Parameters
         ----------
-        suback: MqttPubrec
-
+        pubrec: MqttPubrec
         """
         if self.state is ReactorState.connected:
             try:
@@ -784,7 +790,9 @@ class Reactor:
             self.__abort(DecodeReactorError('Remote closed unexpectedly.'))
         elif self.state in (ReactorState.stopping,):
             if len(self.__rbuf) > 0:
-                self.__log.warning('While stopping remote closed stream in the middle of a packet transmission with 0x%s still in the buffer.', b2a_hex(self.__rbuf))
+                m = 'While stopping remote closed stream in the middle' \
+                    ' of a packet transmission with 0x%s still in the buffer.'
+                self.__log.warning(m, b2a_hex(self.__rbuf))
             elif len(self.__wbuf) > 0:
                 self.__log.warning('While stopping remote closed stream before consuming bytes.')
             else:
@@ -876,7 +884,8 @@ class Reactor:
         assert self.state == ReactorState.connecting
         self.__log.info('Connected.')
         self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
-        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period, self.__keepalive_abort_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
+                                                               self.__keepalive_abort_timeout)
 
         self.__state = ReactorState.connack
 
@@ -884,7 +893,7 @@ class Reactor:
         self.__queue.insert(0, connect)
 
         assert not self.__wbuf
-        num_bytes_flushed = self.__launch_next_queued_packet()
+        self.__launch_next_queued_packet()
 
     def __flush(self):
         """Calls send exactly once; returning the number of bytes written.
@@ -919,10 +928,7 @@ class Reactor:
                           ReactorState.connack,
                           ReactorState.connected,
                           ReactorState.stopping):
-            try:
-                self.socket.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
+            self.socket.shutdown(socket.SHUT_RDWR)
             self.socket.close()
 
         self.__wbuf = bytearray()

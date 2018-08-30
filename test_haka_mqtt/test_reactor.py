@@ -447,19 +447,37 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_publish_qos2_out_of_order_pubcomp(self):
-        self.start_and_publish_qos2()
+        publish0 = self.start_and_publish_qos2()
 
-        publish = MqttPublish(1, 'topic', 'outgoing', False, 2, False)
-        self.set_send_packet_side_effect(publish)
-        actual_publish = self.reactor.publish(publish.topic,
-                                       publish.payload,
-                                       publish.qos,
-                                       publish.retain)
+        publish1 = MqttPublish(1, 'topic', 'outgoing', False, 2, False)
+        self.set_send_packet_side_effect(publish1)
+        actual_publish = self.reactor.publish(publish1.topic,
+                                       publish1.payload,
+                                       publish1.qos,
+                                       publish1.retain)
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
-        self.assertEqual(publish, actual_publish)
+        self.assertEqual(publish1, actual_publish)
 
-        pubrec = MqttPubrec(publish.packet_id)
+        pubrec0 = MqttPubrec(publish0.packet_id)
+        pubrel0 = MqttPubrel(publish0.packet_id)
+        self.set_send_packet_side_effect(pubrel0)
+        self.read_packet_then_block(pubrec0)
+        self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel0))
+        self.socket.send.reset_mock()
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        pubrec1 = MqttPubrec(publish1.packet_id)
+        pubrel1 = MqttPubrel(publish1.packet_id)
+        self.set_send_packet_side_effect(pubrel1)
+        self.read_packet_then_block(pubrec1)
+        self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel1))
+        self.socket.send.reset_mock()
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        pubrec = MqttPubcomp(publish1.packet_id)
         self.read_packet_then_block(pubrec)
         self.on_pubrec.assert_not_called()
         self.socket.send.assert_not_called()

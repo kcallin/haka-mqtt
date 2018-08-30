@@ -408,6 +408,24 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
 
         return publish
 
+    def test_publish_qos2(self):
+        publish = self.start_and_publish_qos2()
+
+        pubrec = MqttPubrec(publish.packet_id)
+        pubrel = MqttPubrel(publish.packet_id)
+        self.set_send_packet_side_effect(pubrel)
+        self.read_packet_then_block(pubrec)
+        self.on_pubrec.assert_called_once()
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel))
+        self.socket.send.reset_mock()
+
+        pubcomp = MqttPubcomp(publish.packet_id)
+        self.read_packet_then_block(pubcomp)
+        self.on_pubcomp.assert_called_once()
+        self.socket.send.assert_not_called()
+
+        self.reactor.terminate()
+
     def test_publish_qos2_out_of_order_pubrec(self):
         self.start_and_publish_qos2()
 
@@ -426,6 +444,35 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.on_pubrec.assert_not_called()
         self.socket.send.assert_not_called()
         self.socket.send.reset_mock()
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
+    def test_publish_qos2_out_of_order_pubcomp(self):
+        self.start_and_publish_qos2()
+
+        publish = MqttPublish(1, 'topic', 'outgoing', False, 2, False)
+        self.set_send_packet_side_effect(publish)
+        actual_publish = self.reactor.publish(publish.topic,
+                                       publish.payload,
+                                       publish.qos,
+                                       publish.retain)
+        self.socket.send.reset_mock()
+        self.assertFalse(self.reactor.want_write())
+        self.assertEqual(publish, actual_publish)
+
+        pubrec = MqttPubrec(publish.packet_id)
+        self.read_packet_then_block(pubrec)
+        self.on_pubrec.assert_not_called()
+        self.socket.send.assert_not_called()
+        self.socket.send.reset_mock()
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
+    def test_pubcomp_not_in_flightpublish_qos2_out_of_order_pubcomp(self):
+        self.start_to_connack()
+
+        pubcomp = MqttPubcomp(0)
+        self.read_packet_then_block(pubcomp)
+        self.on_pubcomp.assert_not_called()
+        self.socket.send.assert_not_called()
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_pubrec_not_in_flight_packet_id(self):

@@ -710,7 +710,7 @@ class Reactor:
 
         Parameters
         ----------
-        suback: MqttPubrec
+        pubcomp: MqttPubcomp
 
         """
         if self.state is ReactorState.connected:
@@ -719,34 +719,24 @@ class Reactor:
             except IndexError:
                 pubrel = None
 
-            if pubrel:
-                if pubrel.packet_id == pubcomp.packet_id:
-                    del self.__in_flight_pubrel[0]
-                    self.__log.info('Received %s.', repr(pubcomp))
+            if pubrel and pubrel.packet_id == pubcomp.packet_id:
+                del self.__in_flight_pubrel[0]
+                self.__log.info('Received %s.', repr(pubcomp))
 
-                    if self.on_pubcomp is not None:
-                        self.on_pubcomp(self, pubcomp)
-                else:
-                    in_flight_packet_ids = [pubrel.packet_id for pubrel in self.__in_flight_pubrel]
-                    if pubcomp.packet_id in in_flight_packet_ids:
-                        m = 'Received pubcomp for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not next in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        pubcomp.packet_id,
-                                                        pubrel.packet_id,
-                                                        pubcomp.packet_id)
-                    else:
-                        m = 'Received pubcomp for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        pubcomp.packet_id,
-                                                        pubrel.packet_id,
-                                                        pubcomp.packet_id)
+                if self.on_pubcomp is not None:
+                    self.on_pubcomp(self, pubcomp)
+            elif pubrel and pubcomp.packet_id in [p.packet_id for p in self.__in_flight_pubrel]:
+                m = 'Received %s when packet_id=%d was the next pubrel in flight; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(pubcomp),
+                                                pubrel.packet_id)
             else:
-                self.__abort_protocol_violation('Received %s for a pubrel that was not in-flight; aborting.',
-                                                repr(pubcomp))
+                m = 'Received %s when no pubrel for packet_id=%d was in-flight; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(pubcomp),
+                                                pubcomp.packet_id)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(self.state)
 
     def __on_pubrel(self, pubrel):
         """

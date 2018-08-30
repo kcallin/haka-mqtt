@@ -296,38 +296,60 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         p.clean_session = False
         return p
 
-    def test_publish_qos1(self):
+    def start_and_publish_qos1(self):
         self.start_to_connack()
 
-        TOPIC = 'topic'
-        expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
-        self.set_send_packet_side_effect(expected_publish)
-        actual_publish = self.reactor.publish(expected_publish.topic,
-                                       expected_publish.payload,
-                                       expected_publish.qos,
-                                       expected_publish.retain)
+        publish = MqttPublish(0, 'topic', 'outgoing', False, 1, False)
+        self.set_send_packet_side_effect(publish)
+        actual_publish = self.reactor.publish(publish.topic,
+                                       publish.payload,
+                                       publish.qos,
+                                       publish.retain)
         self.assertFalse(self.reactor.want_write())
-        self.assertEqual(expected_publish, actual_publish)
+        self.assertEqual(publish, actual_publish)
+        self.socket.send.reset_mock()
 
-        puback = MqttPuback(expected_publish.packet_id)
+        return publish
+
+    def test_publish_qos1(self):
+        publish = self.start_and_publish_qos1()
+
+        puback = MqttPuback(publish.packet_id)
         self.read_packet_then_block(puback)
         self.on_puback.assert_called_once()
 
         self.reactor.terminate()
 
-    def test_publish_disconnect_connect_republish_qos1(self):
+    def test_publish_qos1_out_of_order_puback(self):
+        self.start_and_publish_qos1()
+
+        publish = MqttPublish(1, 'topic', 'outgoing', False, 1, False)
+        self.set_send_packet_side_effect(publish)
+        actual_publish = self.reactor.publish(publish.topic,
+                                       publish.payload,
+                                       publish.qos,
+                                       publish.retain)
+        self.assertFalse(self.reactor.want_write())
+        self.assertEqual(publish, actual_publish)
+        self.socket.send.reset_mock()
+
+        puback = MqttPuback(publish.packet_id)
+        self.read_packet_then_block(puback)
+        self.on_puback.assert_not_called()
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
+        self.reactor.terminate()
+
+    def test_puback_not_in_flight(self):
         self.start_to_connack()
 
-        TOPIC = 'topic'
-        expected_publish = MqttPublish(0, TOPIC, 'incoming', False, 1, False)
-        self.set_send_packet_side_effect(expected_publish)
-        actual_publish = self.reactor.publish(expected_publish.topic,
-                                              expected_publish.payload,
-                                              expected_publish.qos,
-                                              expected_publish.retain)
-        self.assertFalse(self.reactor.want_write())
-        self.assertEqual(expected_publish, actual_publish)
-        self.socket.send.reset_mock()
+        puback = MqttPuback(0)
+        self.read_packet_then_block(puback)
+        self.on_puback.assert_not_called()
+        self.assertEqual(self.reactor.state, ReactorState.error)
+
+    def test_publish_disconnect_connect_republish_qos1(self):
+        publish = self.start_and_publish_qos1()
 
         self.reactor.terminate()
 
@@ -345,11 +367,11 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
         connack = MqttConnack(False, ConnackResult.accepted)
-        self.set_send_side_effect([len(buffer_packet(expected_publish))])
+        self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(connack)
-        self.set_send_packet_side_effect(expected_publish)
+        self.set_send_packet_side_effect(publish)
         self.assertEqual(self.reactor.state, ReactorState.connected)
-        self.socket.send.assert_called_once_with(buffer_packet(expected_publish))
+        self.socket.send.assert_called_once_with(buffer_packet(publish))
         self.assertFalse(self.reactor.want_write())
 
         self.reactor.terminate()
@@ -361,10 +383,10 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         p.clean_session = False
         return p
 
-    def test_publish_qos2(self):
+    def start_and_publish_qos2(self):
         self.start_to_connack()
 
-        publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
+        publish = MqttPublish(0, 'topic', 'outgoing', False, 2, False)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,
@@ -373,6 +395,11 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
         self.assertEqual(publish, actual_publish)
+
+        return publish
+
+    def test_publish_qos2(self):
+        publish = self.start_and_publish_qos2()
 
         pubrec = MqttPubrec(publish.packet_id)
         pubrel = MqttPubrel(publish.packet_id)
@@ -388,6 +415,15 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.socket.send.assert_not_called()
 
         self.reactor.terminate()
+
+    def test_publish_qos2_puback_error(self):
+        publish = self.start_and_publish_qos2()
+
+        puback = MqttPuback(publish.packet_id)
+        self.read_packet_then_block(puback)
+        self.socket.send.assert_not_called()
+        self.socket.send.reset_mock()
+        self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_publish_disconnect_qos2(self):
         self.start_to_connack()

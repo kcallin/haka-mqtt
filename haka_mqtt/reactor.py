@@ -24,7 +24,7 @@ from haka_mqtt.mqtt import (
     MqttPublish,
     MqttPuback,
     MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult, SubscribeResult)
-from haka_mqtt.on_str import HexOnStr
+from haka_mqtt.on_str import HexOnStr, ReprOnStr
 
 
 class ReactorProperties(object):
@@ -639,37 +639,28 @@ class Reactor:
             except IndexError:
                 publish = None
 
-            if publish:
-                if publish.packet_id == puback.packet_id:
-                    if publish.qos == 1:
-                        del self.__in_flight_publish[0]
-                        self.__log.info('Received %s.', repr(puback))
+            if publish and publish.packet_id == puback.packet_id:
+                if publish.qos == 1:
+                    del self.__in_flight_publish[0]
+                    self.__log.info('Received %s.', repr(puback))
 
-                        if self.on_puback is not None:
-                            self.on_puback(self, puback)
-                    else:
-                        self.__abort_protocol_violation('Received %s in response to qos=1 publish %s; aborting.',
-                                                        repr(puback),
-                                                        repr(publish))
+                    if self.on_puback is not None:
+                        self.on_puback(self, puback)
                 else:
-                    in_flight_mids = [publish.mid for publish in self.__in_flight_publish]
-                    if puback.packet_id in in_flight_mids:
-                        m = 'Received puback for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not next in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        puback.packet_id,
-                                                        publish.packet_id,
-                                                        puback.packet_id)
-                    else:
-                        m = 'Received puback for mid=%d when mid=%d was expected;' \
-                            ' mid=%d was not in-flight; aborting.'
-                        self.__abort_protocol_violation(m,
-                                                        puback.packet_id,
-                                                        publish.packet_id,
-                                                        puback.packet_id)
+                    self.__abort_protocol_violation('Received %s, an inappropriate response to qos=%d %s; aborting.',
+                                                    ReprOnStr(puback),
+                                                    publish.qos,
+                                                    ReprOnStr(publish))
+            elif publish and puback.packet_id in [p.packet_id for p in self.__in_flight_publish]:
+                m = 'Received %s instead of puback for next-in-flight packet_id=%d; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(puback),
+                                                publish.packet_id)
             else:
-                self.__abort_protocol_violation('Received %s for a publish that was not in-flight; aborting.',
-                                                repr(puback))
+                m = 'Received %s when packet_id=%d was not in-flight; aborting.'
+                self.__abort_protocol_violation(m,
+                                                ReprOnStr(puback),
+                                                puback.packet_id)
         else:
             assert False, 'Received MqttPuback at an inappropriate time.'
 
@@ -968,7 +959,7 @@ class Reactor:
         self.__abort(se)
 
     def __abort_protocol_violation(self, m, *params):
-        self.__log.warning(m, *params)
+        self.__log.error(m, *params)
         self.__abort(ProtocolViolationError(m % params))
 
     def __abort(self, e):

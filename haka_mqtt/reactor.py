@@ -23,7 +23,15 @@ from haka_mqtt.mqtt import (
     DecodeError,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect, MqttPingreq, MqttPingresp, MqttPubrec, MqttPubrel, MqttPubcomp, ConnackResult, SubscribeResult)
+    MqttDisconnect,
+    MqttPingreq,
+    MqttPingresp,
+    MqttPubrec,
+    MqttPubrel,
+    MqttPubcomp,
+    ConnackResult,
+    SubscribeResult,
+)
 from haka_mqtt.on_str import HexOnStr, ReprOnStr
 
 
@@ -119,6 +127,9 @@ class KeepaliveTimeoutReactorError(ReactorError):
     def __eq__(self, other):
         return isinstance(other, KeepaliveTimeoutReactorError)
 
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.description)
+
 
 class SocketError(ReactorError):
     """
@@ -137,7 +148,7 @@ class SocketError(ReactorError):
         self.errno = errno_val
 
     def __repr__(self):
-        return 'SocketError({}<{}>)'.format(errno.errorcode[self.errno], self.errno)
+        return 'SocketError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
 
     def __eq__(self, other):
         return self.errno == other.errno
@@ -401,7 +412,7 @@ class Reactor:
 
             self.__state = ReactorState.stopping
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
 
@@ -587,7 +598,7 @@ class Reactor:
             if self.on_publish is not None:
                 self.on_publish(self, publish)
         else:
-            assert False, 'Received MqttSuback at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __on_suback(self, suback):
         """
@@ -623,7 +634,7 @@ class Reactor:
                 self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
                                                 repr(suback))
         else:
-            assert False, 'Received MqttSuback at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __on_puback(self, puback):
         """
@@ -662,7 +673,7 @@ class Reactor:
                                                 ReprOnStr(puback),
                                                 puback.packet_id)
         else:
-            assert False, 'Received MqttPuback at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __on_pubrec(self, pubrec):
         """
@@ -703,7 +714,7 @@ class Reactor:
                                                 ReprOnStr(pubrec),
                                                 pubrec.packet_id)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(self.state)
 
     def __on_pubcomp(self, pubcomp):
         """
@@ -752,7 +763,7 @@ class Reactor:
                 self.on_pubrel(self, pubrel)
             self.__queue_and_flush(MqttPubcomp(pubrel.packet_id))
         else:
-            assert False, 'Received MqttPubrel at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __on_pingresp(self, pingresp):
         """
@@ -765,7 +776,7 @@ class Reactor:
         if self.state is ReactorState.connected:
             self.__log.info('Received %s.', repr(pingresp))
         else:
-            assert False, 'Received MqttSuback at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __on_muted_remote(self):
         if self.state in (ReactorState.connack, ReactorState.connected):
@@ -790,7 +801,7 @@ class Reactor:
             self.socket.close()
             self.__state = ReactorState.stopped
         else:
-            assert False, 'Received muted_remote at an inappropriate time.'
+            raise NotImplementedError(self.state)
 
     def __launch_next_queued_packet(self):
         if self.__queue:

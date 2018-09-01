@@ -1,4 +1,11 @@
+from os.path import join, dirname
 from setuptools import setup, find_packages
+
+
+def read_path(filename):
+    with open(join(dirname(__file__), filename)) as f:
+        return f.read()
+
 
 setup(
     name="haka-mqtt",
@@ -18,6 +25,7 @@ setup(
 #    could also include long_description, download_url, classifiers, etc.
     url="http://example.com/HelloWorld/",   # project home page
     description="Weapons grade MQTT client.",
+    long_description=read_path('README.rst'),
     project_urls={
         "Bug Tracker": "https://github.com/kcallin/haka-mqtt/issues",
         "Documentation": "https://haka-mqtt.readthedocs.io/en/latest/",

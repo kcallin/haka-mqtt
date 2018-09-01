@@ -4,14 +4,21 @@ setup(
     name="haka-mqtt",
     version="0.1",
     install_requires=[
-       'enum34>=1.1.6',
+        'enum34>=1.1.6;python_version<"3.4"',
     ],
     tests_require = [
         'mock',
     ],
+    test_suite="tests",
+    packages=find_packages(),
     author="Keegan Callin",
     author_email="kc@kcallin.net",
     description="Weapons grade MQTT client.",
+    project_urls={
+        "Bug Tracker": "https://github.com/kcallin/haka-mqtt/issues",
+        "Documentation": "https://docs.example.com/HelloWorld/",
+        "Source Code": "https://github.com/kcallin/haka-mqtt",
+    }
 )
 
 """

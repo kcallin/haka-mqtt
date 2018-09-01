@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="haka-mqtt",
-    version="0.1",
+    version="0.1.0",
     install_requires=[
         'enum34>=1.1.6;python_version<"3.4"',
     ],

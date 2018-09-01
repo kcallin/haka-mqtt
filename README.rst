@@ -3,6 +3,14 @@ haka-mqtt
 
 Weapons grade MQTT python client.
 
+Status
+-------
+
+The project's ambition is to be a "weapons grade MQTT python client".
+This ambition has not yet been realized and the project is not ready for
+public consumption (2018-09-01).
+
+
 Installation
 -------------
 

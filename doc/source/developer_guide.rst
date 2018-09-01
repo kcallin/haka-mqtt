@@ -29,8 +29,15 @@ Python source code is documented according to the the numpy
 documentation standard at
 https://numpydoc.readthedocs.io/en/latest/format.html.
 
+Requirements
+=============
+
+The project will eventually track requirements using a project like
+`Pipfile <https://github.com/pypa/pipfile>`_.
+
 Building Documentation
 =======================
+
 
 
 

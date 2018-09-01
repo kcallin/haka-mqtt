@@ -238,8 +238,8 @@ class Reactor:
         self.__state = ReactorState.init
         self.__error = None
 
-        self.subscriptions = {}
-        self.__queue = []
+        self.__preflight_queue = []
+
         # Publish packets must be ack'd in order of publishing
         # [MQTT-4.6.0-2], [MQTT-4.6.0-3]
         self.__in_flight_publish = []
@@ -333,8 +333,6 @@ class Reactor:
         """
         assert self.state == ReactorState.connected
         subscribe = MqttSubscribe(self.__packet_id_iter.next(), topics)
-        for topic in topics:
-            self.subscriptions[topic.name] = TopicSubscription(topic.name, topic.max_qos)
         self.__queue_and_flush(subscribe)
 
     def unsubscribe(self, topics):
@@ -372,10 +370,9 @@ class Reactor:
         self.__log.info('Starting.')
         # TODO: Does this fulfill MQTT ordering requirements?
         in_flight_packets = self.__in_flight_publish + self.__in_flight_pubrel
-        self.__queue = in_flight_packets + [p for p in self.__queue if p.packet_type is MqttControlPacketType.publish]
+        self.__preflight_queue = in_flight_packets + [p for p in self.__preflight_queue if p.packet_type is MqttControlPacketType.publish]
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
-        self.subscriptions = {}
         self.socket = self.__socket_factory()
 
         try:
@@ -619,15 +616,6 @@ class Reactor:
             subscribe = self.__in_flight_subscribe.pop(suback.packet_id, None)
             if subscribe:
                 if len(suback.results) == len(subscribe.topics):
-                    for request, result in zip(subscribe.topics, suback.results):
-                        # TODO: What if subscriptions[request.name] doesn't exist
-                        # because of conflicting unsubscribe calls?
-                        if result == SubscribeResult.fail:
-                            del self.subscriptions[request.name]
-                        else:
-                            subscription = self.subscriptions[request.name]
-                            subscription._set_granted_max_qos = result.qos()
-
                     self.__log.info('Received %s.', repr(suback))
                     if self.on_suback is not None:
                         self.on_suback(self, suback)
@@ -812,8 +800,8 @@ class Reactor:
             raise NotImplementedError(self.state)
 
     def __launch_next_queued_packet(self):
-        if self.__queue:
-            packet = self.__queue.pop(0)
+        if self.__preflight_queue:
+            packet = self.__preflight_queue.pop(0)
 
             # TODO: Respect maximum number of in-flight publish packets.
 
@@ -870,7 +858,7 @@ class Reactor:
         int
             Returns number of bytes flushed to underlying socket.
         """
-        self.__queue.append(packet)
+        self.__preflight_queue.append(packet)
 
         if self.__wbuf:
             num_bytes_flushed = 0
@@ -890,7 +878,7 @@ class Reactor:
         self.__state = ReactorState.connack
 
         connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
-        self.__queue.insert(0, connect)
+        self.__preflight_queue.insert(0, connect)
 
         assert not self.__wbuf
         self.__launch_next_queued_packet()

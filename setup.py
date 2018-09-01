@@ -13,36 +13,15 @@ setup(
     packages=find_packages(),
     author="Keegan Callin",
     author_email="kc@kcallin.net",
+#    license="PSF",
+#    keywords="hello world example examples",
+#    could also include long_description, download_url, classifiers, etc.
+    url="http://example.com/HelloWorld/",   # project home page
     description="Weapons grade MQTT client.",
     project_urls={
         "Bug Tracker": "https://github.com/kcallin/haka-mqtt/issues",
-        "Documentation": "https://docs.example.com/HelloWorld/",
+#        "Documentation": "https://docs.example.com/HelloWorld/",
         "Source Code": "https://github.com/kcallin/haka-mqtt",
     }
 )
 
-"""
-    # Project uses reStructuredText, so ensure that the docutils get
-    # installed or upgraded on the target machine
-    install_requires=['docutils>=0.3'],
-    # scripts=['say_hello.py'],
-
-    package_data={
-        # If any package contains *.txt or *.rst files, include them:
-        '': ['*.txt', '*.rst'],
-        # And include any *.msg files found in the 'hello' package, too:
-        'hello': ['*.msg'],
-    },
-
-    # metadata to display on PyPI
-    license="PSF",
-    keywords="hello world example examples",
-    url="http://example.com/HelloWorld/",   # project home page, if any
-    project_urls={
-        "Bug Tracker": "https://bugs.example.com/HelloWorld/",
-        "Documentation": "https://docs.example.com/HelloWorld/",
-        "Source Code": "https://code.example.com/HelloWorld/",
-    }
-
-    # could also include long_description, download_url, classifiers, etc.
-"""

@@ -20,7 +20,7 @@ setup(
     description="Weapons grade MQTT client.",
     project_urls={
         "Bug Tracker": "https://github.com/kcallin/haka-mqtt/issues",
-#        "Documentation": "https://docs.example.com/HelloWorld/",
+        "Documentation": "https://haka-mqtt.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/kcallin/haka-mqtt",
     }
 )

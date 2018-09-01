@@ -3,12 +3,19 @@ haka-mqtt
 
 Weapons grade MQTT python client.
 
-GPG Usage
----------
-PEP-503
+Installation
+-------------
 
-PEP-314
+The haka-mqtt package can be installed from source in a standard fashion
+with the command:
 
-PEP-241
+.. code-block:: bash
 
-PEP-101 - Doing Python Releases
+   python setup.py install
+
+Semantic Versioning
+--------------------
+
+The haka-mqtt package is versioned according to `Semantic Versioning
+<https://semver.org>`_ 2.0.0 guidelines.
+

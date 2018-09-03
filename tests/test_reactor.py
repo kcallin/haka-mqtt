@@ -102,7 +102,12 @@ class TestReactor(unittest.TestCase):
         self.socket.send.side_effect = rv_iterable
 
     def set_send_packet_side_effect(self, p):
-        self.set_send_side_effect([len(buffer_packet(p))])
+        try:
+            packet_it = iter(p)
+        except TypeError:
+            packet_it = [p]
+
+        self.set_send_side_effect([sum(len(buffer_packet(p)) for p in packet_it)])
 
     def send_packet(self, p):
         buf = buffer_packet(p)
@@ -170,7 +175,7 @@ class TestReactor(unittest.TestCase):
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_connack_keepalive_timeout(self):
-        self.start_to_connect()
+        self.start_to_connack()
         p = MqttPingreq()
         self.set_send_packet_side_effect(p)
         self.scheduler.poll(self.keepalive_period)
@@ -461,16 +466,16 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
 
         pubrec0 = MqttPubrec(publish0.packet_id)
         pubrel0 = MqttPubrel(publish0.packet_id)
-        self.set_send_packet_side_effect(pubrel0)
+        self.set_send_packet_side_effect([pubrel0, actual_publish])
         self.read_packet_then_block(pubrec0)
         self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
-        self.socket.send.assert_called_once_with(buffer_packet(pubrel0))
+        self.socket.send.assert_called_once_with(buffer_packet(pubrel0) + buffer_packet(actual_publish))
         self.socket.send.reset_mock()
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         pubrec1 = MqttPubrec(publish1.packet_id)
         pubrel1 = MqttPubrel(publish1.packet_id)
-        self.set_send_packet_side_effect(pubrel1)
+        self.set_send_packet_side_effect([pubrel1, actual_publish])
         self.read_packet_then_block(pubrec1)
         self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
         self.socket.send.assert_called_once_with(buffer_packet(pubrel1))

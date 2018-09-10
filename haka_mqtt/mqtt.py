@@ -1018,7 +1018,7 @@ class MqttPublish(MqttPacketBody):
 
         Parameters
         ----------
-        packet_id: int
+        packet_id: int or None
             0 <= packet_id <= 2**16 -1
         topic: str
         payload: bytes
@@ -1027,7 +1027,7 @@ class MqttPublish(MqttPacketBody):
             0 <= qos <= 2
         retain: bool
         """
-        assert 0 <= packet_id <= 2**16 - 1
+        assert packet_id is None or 0 <= packet_id <= 2**16 - 1
         assert 0 <= qos <= 2
         assert isinstance(dupe, bool)
         assert isinstance(retain, bool)

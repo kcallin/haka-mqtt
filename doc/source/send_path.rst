@@ -167,3 +167,5 @@ QoS 2 w/Pubrel Disconnect
       S [description="MQTT Server"];
    }
 
+Maximum Publishes In-Flight
+============================

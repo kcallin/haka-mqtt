@@ -25,6 +25,7 @@ from haka_mqtt.mqtt import (
     MqttPubcomp,
     ConnackResult
 )
+from haka_mqtt.mqtt_request import MqttPublishRequest
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -307,11 +308,16 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         publish = MqttPublish(0, 'topic', 'outgoing', False, 1, False)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
-                                       publish.payload,
-                                       publish.qos,
-                                       publish.retain)
+                                              publish.payload,
+                                              publish.qos,
+                                              publish.retain)
+        pub_status = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+        self.assertEqual(pub_status, actual_publish)
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(buffer_packet(publish))
         self.assertFalse(self.reactor.want_write())
-        self.assertEqual(publish, actual_publish)
         self.socket.send.reset_mock()
 
         return publish
@@ -609,6 +615,8 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
         p = MqttSubscribe(0, [MqttTopic(topic_name, 1)])
         self.set_send_packet_side_effect(p)
         self.reactor.subscribe(p.topics)
+        self.socket.send.assert_not_called()
+        self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
@@ -623,6 +631,7 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
         self.on_publish.assert_called_once()
 
         puback = MqttPuback(publish.packet_id)
+        self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
         self.socket.send.reset_mock()
 
@@ -637,6 +646,7 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
         p = MqttSubscribe(0, [MqttTopic(TOPIC, 2)])
         self.set_send_packet_side_effect(p)
         self.reactor.subscribe(p.topics)
+        self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(p))
         self.socket.send.reset_mock()
 
@@ -651,6 +661,7 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
         self.on_publish.assert_called_once()
 
         pubrec = MqttPubrec(publish.packet_id)
+        self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(pubrec))
         self.socket.send.reset_mock()
 
@@ -663,6 +674,7 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
         self.on_pubrel.assert_called_once()
 
         pubcomp = MqttPubcomp(publish.packet_id)
+        self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(pubcomp))
         self.socket.send.reset_mock()
 

@@ -297,8 +297,6 @@ class Reactor:
         assert properties.endpoint is not None
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
-        assert isinstance(properties.max_inflight_publish, int)
-        assert properties.max_inflight_publish >= 1
         assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
 
@@ -313,7 +311,6 @@ class Reactor:
         self.__keepalive_abort_deadline = None
         self.__last_poll_instant = None
         self.__clean_session = properties.clean_session
-        self.__max_inflight_publish = properties.max_inflight_publish
 
         self.__socket_factory = properties.socket_factory
         self.socket = None

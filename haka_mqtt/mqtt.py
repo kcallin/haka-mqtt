@@ -314,8 +314,11 @@ class MqttFixedHeader(object):
 
     def __eq__(self, other):
         return (
-            self.packet_type == other.packet_type
+            hasattr(other, 'packet_type')
+            and self.packet_type == other.packet_type
+            and hasattr(other, 'flags')
             and self.flags == other.flags
+            and hasattr(other, 'remaining_len')
             and self.remaining_len == other.remaining_len
         )
 

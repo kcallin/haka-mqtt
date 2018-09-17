@@ -21,9 +21,13 @@ with the command:
 
    python setup.py install
 
-Semantic Versioning
---------------------
 
-The haka-mqtt package is versioned according to `Semantic Versioning
-<https://semver.org>`_ 2.0.0 guidelines.
+Project Infrastructure
+-----------------------
 
+The project is coordinated through public infrastructure available at
+several places:
+
+* `Bug Tracker <https://github.com/kcallin/haka-mqtt/issues>`_
+* `Documentation <https://haka-mqtt.readthedocs.io/en/latest/>`_
+* `Source Code <https://github.com/kcallin/haka-mqtt>`_

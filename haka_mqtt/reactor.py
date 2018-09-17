@@ -67,6 +67,25 @@ class ReactorProperties(object):
 
 @unique
 class ReactorState(IntEnum):
+    """
+    Inactive states are those where there are no active deadlines, the
+    socket is closed and there is no active I/O.  Active states are
+    those where any of these characteristics is not met.
+
+    Active States:
+
+    * :py:const:`ReactorState.init`
+    * :py:const:`ReactorState.stopped`
+    * :py:const:`ReactorState.error`
+
+    Inactive States:
+
+    * :py:const:`ReactorState.connecting`
+    * :py:const:`ReactorState.connack`
+    * :py:const:`ReactorState.connected`
+    * :py:const:`ReactorState.stopping`
+
+    """
     init = 0
     connecting = 1
     connack = 2
@@ -484,9 +503,10 @@ class Reactor:
 
     def start(self):
         """Attempts to connect with remote if in one of the inactive
-        states `ReactorState.init`, `ReactorState.stopped`,
-        `ReactorState.error`.  The method has no effect if already in
-        an active state.
+        states :py:const:`ReactorState.init`,
+        :py:const:`ReactorState.stopped`,
+        :py:const:`ReactorState.error`.  The method has no effect if
+        already in an active state.
         """
         self.__assert_state_rules()
 

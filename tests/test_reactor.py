@@ -154,6 +154,22 @@ class TestReactor(unittest.TestCase):
         self.send_packet(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
 
+    def start_to_immediate_connect(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        self.socket.connect.return_value = None
+        connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
+        self.set_send_packet_side_effect(connect)
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.reset_mock()
+        self.assertEqual(ReactorState.connack, self.reactor.state)
+        self.assertTrue(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.assert_called_once_with(buffer_packet(connect))
+        self.assertEqual(self.reactor.state, ReactorState.connack)
+        self.socket.send.reset_mock()
+
     def start_to_connack(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
@@ -172,6 +188,17 @@ class TestReactor(unittest.TestCase):
         connack = MqttConnack(False, ConnackResult.accepted)
         self.read_packet_then_block(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
+
+
+class TestConnect(TestReactor, unittest.TestCase):
+    def test_immediate_connect(self):
+        self.start_to_immediate_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.read_packet_then_block(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.reactor.terminate()
 
 
 class TestReactorPaths(TestReactor, unittest.TestCase):

@@ -4,7 +4,6 @@ import logging
 from binascii import b2a_hex
 from copy import copy
 from io import BytesIO
-from itertools import cycle
 import os
 
 from enum import (

@@ -81,6 +81,13 @@ class ReactorState(IntEnum):
 #
 INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
+# States with active deadlines, open sockets, or pending I/O.
+#
+ACTIVE_STATES = (ReactorState.connecting, ReactorState.connack, ReactorState.connected, ReactorState.stopping)
+
+
+assert set(INACTIVE_STATES).union(ACTIVE_STATES) == set(iter(ReactorState))
+
 
 class TopicSubscription(object):
     def __init__(self, topic, ask_max_qos):
@@ -476,12 +483,23 @@ class Reactor:
                 self.__abort_socket_error(SocketError(e.errno))
 
     def start(self):
+        """Attempts to connect with remote if in one of the inactive
+        states `ReactorState.init`, `ReactorState.stopped`,
+        `ReactorState.error`.  The method has no effect if already in
+        an active state.
+        """
         self.__assert_state_rules()
 
         if self.state in INACTIVE_STATES:
             self.__start()
+        elif self.state in (ReactorState.connecting, ReactorState.connack):
+            self.__log.warning("Start called while already connecting to server.")
+        elif self.state is ReactorState.connected:
+            self.__log.warning("Start called while already connected.")
+        elif self.state is ReactorState.stopping:
+            self.__log.warning("Start called while stopping; stop process cannot be aborted.")
         else:
-            self.__log.warning("Start called while already running!")
+            raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
 

@@ -255,23 +255,6 @@ FREE_LAUNCH_PACKET_TYPES = {
 }
 
 
-class QueuedPacket(object):
-    def __init__(self, packet):
-        self.__in_flight = False
-        self.__packet = packet
-
-    def in_flight(self):
-        """True if packet is in-flight; False otherwise."""
-        return self.__in_flight
-
-    @property
-    def packet(self):
-        return self.__packet
-
-    def __repr__(self):
-        return 'QueuedPacket({})'.format(repr(self.packet))
-
-
 class Reactor:
     """
     standard_preflight_queue
@@ -362,10 +345,18 @@ class Reactor:
 
     @property
     def keepalive_period(self):
+        """If this period elapses without the client sending a control
+        packet to the server then it will generate a pingreq packet and
+        send it to the server."""
         return self.__keepalive_period
 
     @property
     def keepalive_timeout_period(self):
+        """If the Keep Alive value is non-zero and the Server does not
+        receive a Control Packet from the Client within one and a half
+        times the Keep Alive time period, it MUST disconnect the
+        Network Connection to the Client as if the network had failed.
+        [MQTT-3.1.2-24]"""
         return self.keepalive_period * 1.5
 
     @property
@@ -1118,53 +1109,6 @@ class Reactor:
             num_bytes_flushed = self.__launch_preflight_packets()
         else:
             raise NotImplementedError(self.state)
-
-        return num_bytes_flushed
-
-    def __queue_before_next_publish(self, preflight_packet):
-        """
-
-        Parameters
-        ----------
-        preflight_packet
-
-        Returns
-        -------
-        int
-            Returns number of bytes flushed to underlying socket.
-        """
-
-        insert_idx = len(self.__preflight_queue)
-        for packet_idx, queued_packet in enumerate(self.__preflight_queue):
-            if queued_packet.packet.packet_type is MqttControlPacketType.publish:
-                insert_idx = packet_idx
-                break
-
-        self.__preflight_queue.insert(insert_idx, QueuedPacket(preflight_packet))
-
-        return self.__launch_next_queued_packet()
-        # if num_bytes_flushed == 0:
-        #     self.__log.info('Queuing %s for delivery.', repr(preflight_packet))
-        #
-        # return num_bytes_flushed
-
-    def __queue_and_flush(self, preflight_packet):
-        """
-
-        Parameters
-        ----------
-        preflight_packet
-
-        Returns
-        -------
-        int
-            Returns number of bytes flushed to underlying socket.
-        """
-        self.__preflight_queue.append(QueuedPacket(preflight_packet))
-
-        num_bytes_flushed = self.__launch_next_queued_packet()
-        if num_bytes_flushed == 0:
-            self.__log.info('Queuing %s for delivery.', repr(preflight_packet))
 
         return num_bytes_flushed
 

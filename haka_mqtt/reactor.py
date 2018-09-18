@@ -33,7 +33,7 @@ from haka_mqtt.mqtt import (
     ConnackResult,
     SubscribeResult,
 )
-from haka_mqtt.mqtt_request import MqttSubscribeRequest, MqttUnsubscribeRequest, MqttPublishRequest, MqttPublishStatus
+from haka_mqtt.mqtt_request import MqttSubscribeRequest, MqttUnsubscribeRequest, MqttPublishTicket, MqttPublishStatus
 from haka_mqtt.on_str import HexOnStr, ReprOnStr
 
 
@@ -461,12 +461,12 @@ class Reactor:
 
         Return
         -------
-        MqttPublishRequest
+        MqttPublishTicket
         """
         self.__assert_state_rules()
         assert 0 <= qos <= 2
 
-        req = MqttPublishRequest(topic, payload, qos, retain)
+        req = MqttPublishTicket(topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
 

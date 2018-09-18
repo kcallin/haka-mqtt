@@ -25,7 +25,7 @@ from haka_mqtt.mqtt import (
     MqttPubcomp,
     ConnackResult
 )
-from haka_mqtt.mqtt_request import MqttPublishRequest, MqttPublishStatus
+from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -202,32 +202,14 @@ class TestReactor(unittest.TestCase):
         2. Socket does not immediately connect (EINPROGRESS)
         3. Socket transmits connect
         4. Socket receives connack
-
         """
-        self.assertTrue(self.reactor.state in INACTIVE_STATES)
-
-        # Call to start; connect does not immediately complete
-        # Setup inputs for start
-        self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
-
-        # Call
-        self.reactor.start()
-
-        # Verify start post-conditions.
-        self.socket.connect.assert_called_once_with(self.endpoint)
-        self.socket.connect.reset_mock()
-        self.assertEqual(ReactorState.connecting, self.reactor.state)
-        self.assertFalse(self.reactor.want_read())
-        self.assertTrue(self.reactor.want_write())
-
-
-        self.socket.getsockopt.return_value = 0
-        self.send_packet(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
-        self.assertEqual(self.reactor.state, ReactorState.connack)
+        self.start_to_connect()
 
         connack = MqttConnack(False, ConnackResult.accepted)
         self.read_packet_then_block(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.assertFalse(self.reactor.want_write())
+        self.assertTrue(self.reactor.want_read())
 
 
 class TestConnect(TestReactor, unittest.TestCase):
@@ -385,6 +367,17 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         return p
 
     def start_and_publish_qos1(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+        5.
+
+        Returns
+        -------
+        MqttPublishTicket
+        """
         self.start_to_connack()
 
         publish = MqttPublish(0, 'topic', 'outgoing', False, 1, False)
@@ -393,7 +386,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
                                               publish.payload,
                                               publish.qos,
                                               publish.retain)
-        expected_publish_ticket = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
+        expected_publish_ticket = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain)
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
         self.assertEqual(expected_publish_ticket, publish_ticket)
@@ -425,7 +418,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(publish))
-        pub_status = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain, publish.packet_id)
+        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain, publish.packet_id)
         pub_status._set_status(MqttPublishStatus.puback)
         self.assertEqual(pub_status, actual_publish)
         self.socket.send.reset_mock()
@@ -494,7 +487,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         publish = MqttPublish(0, 'topic', 'outgoing', False, 2, False)
-        pub_status = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
+        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,
@@ -553,7 +546,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         # C --MqttPublish(packet_id=0, topic='topic', payload=0x6f7574676f696e67, dupe=False, qos=2, retain=False)--> S
         #
         publish1 = MqttPublish(1, 'topic', 'outgoing', False, 2, False)
-        pub_status = MqttPublishRequest(publish1.topic, publish1.payload, publish1.qos, publish1.retain)
+        pub_status = MqttPublishTicket(publish1.topic, publish1.payload, publish1.qos, publish1.retain)
         actual_publish = self.reactor.publish(publish1.topic,
                                        publish1.payload,
                                        publish1.qos,
@@ -638,7 +631,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
-        pub_status = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
+        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain)
         se = socket_error(errno.ECONNABORTED)
         self.set_send_side_effect([se])
         self.assertFalse(self.reactor.want_write())

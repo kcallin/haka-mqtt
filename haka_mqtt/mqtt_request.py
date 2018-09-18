@@ -49,7 +49,7 @@ class MqttPublishStatus(IntEnum):
     done = 4
 
 
-class MqttPublishRequest(MqttRequest):
+class MqttPublishTicket(MqttRequest):
     def __init__(self, topic, payload, qos, retain, packet_id=None):
         """
 
@@ -61,7 +61,7 @@ class MqttPublishRequest(MqttRequest):
             0 <= qos <= 2
         retain: bool
         """
-        super(MqttPublishRequest, self).__init__(MqttControlPacketType.publish, packet_id)
+        super(MqttPublishTicket, self).__init__(MqttControlPacketType.publish, packet_id)
 
         assert 0 <= qos <= 2
         assert isinstance(retain, bool)

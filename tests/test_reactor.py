@@ -1,3 +1,9 @@
+"""Testing for the reactor.py.
+
+
+CHECKED-KC0: tests that are at a production level of readiness.
+
+"""
 from __future__ import print_function
 
 import errno

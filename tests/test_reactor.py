@@ -411,33 +411,48 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         return publish_ticket
 
     def test_publish_qos1(self):
+        # CHECKED-KC0 (2018-09-17)
         publish_ticket = self.start_and_publish_qos1()
 
+        # Server sends puback back to reactor.
         puback = MqttPuback(publish_ticket.packet_id)
         self.read_packet_then_block(puback)
         self.on_puback.assert_called_once_with(self.reactor, puback)
         self.assertEqual(publish_ticket.status, MqttPublishStatus.done)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
 
         self.reactor.terminate()
 
     def test_publish_qos1_out_of_order_puback(self):
-        self.start_and_publish_qos1()
+        # CHECKED-KC0 (2018-09-17)
+        pt0 = self.start_and_publish_qos1()
 
-        publish = MqttPublish(1, 'topic', 'outgoing', False, 1, False)
-        self.set_send_packet_side_effect(publish)
-        actual_publish = self.reactor.publish(publish.topic,
-                                       publish.payload,
-                                       publish.qos,
-                                       publish.retain)
+        # Publish a new message.
+        ept1 = MqttPublishTicket('topic1', 'outgoing1', 1)
+        pt1 = self.reactor.publish(ept1.topic,
+                                   ept1.payload,
+                                   ept1.qos,
+                                   ept1.retain)
         self.assertTrue(self.reactor.want_write())
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(publish))
-        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain, publish.packet_id)
-        pub_status._set_status(MqttPublishStatus.puback)
-        self.assertEqual(pub_status, actual_publish)
-        self.socket.send.reset_mock()
+        self.socket.send.assert_not_called()
+        self.assertEqual(ept1, pt1)
 
-        puback = MqttPuback(publish.packet_id)
+        # Allow reactor to put pt1 in-flight.
+        publish = MqttPublish(1, pt1.topic, pt1.payload, pt1.dupe, pt1.qos, pt1.retain)
+        self.set_send_packet_side_effect(publish)
+
+        self.reactor.write()
+
+        self.socket.send.assert_called_once_with(buffer_packet(publish))
+
+        self.assertEqual(1, pt1.packet_id)
+        self.assertEqual(MqttPublishStatus.puback, pt1.status)
+        self.socket.send.reset_mock()
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        # Send a puback for pt1 to the reactor before a puback for pt0
+        # is sent.  This is a violation of [MQTT-4.6.0-2].
+        puback = MqttPuback(pt1.packet_id)
         self.read_packet_then_block(puback)
         self.on_puback.assert_not_called()
         self.assertEqual(self.reactor.state, ReactorState.error)

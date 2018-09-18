@@ -441,7 +441,9 @@ class Reactor:
         return req
 
     def publish(self, topic, payload, qos, retain=False):
-        """Publish may be called in any state.
+        """Publish may be called in any state.  It will place a packet
+        onto the preflight queue but no packet_id will be assigned
+        until the packet is placed in-flight.
 
         Parameters
         -----------
@@ -854,13 +856,13 @@ class Reactor:
         if self.state is ReactorState.connected:
             idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
             if idx is None:
-                publish = None
+                publish_ticket = None
             else:
-                publish = self.__inflight_queue[idx]
+                publish_ticket = self.__inflight_queue[idx]
 
             in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue]
-            if publish and publish.packet_id == pubrec.packet_id:
-                if publish.qos == 2:
+            if publish_ticket and publish_ticket.packet_id == pubrec.packet_id:
+                if publish_ticket.qos == 2:
                     del self.__inflight_queue[idx]
                     self.__log.info('Received %s.', repr(pubrec))
 
@@ -870,17 +872,23 @@ class Reactor:
 
                     self.__preflight_queue.insert(insert_idx, MqttPubrel(pubrec.packet_id))
                 else:
-                    self.__abort_protocol_violation('Received %s in response to qos=%d publish %s; aborting.',
+                    publish = MqttPublish(publish_ticket.packet_id,
+                                          publish_ticket.topic,
+                                          publish_ticket.payload,
+                                          publish_ticket.dupe,
+                                          publish_ticket.qos,
+                                          publish_ticket.retain)
+                    self.__abort_protocol_violation('Received unexpected %s in response to qos=%d publish %s; aborting.',
                                                     ReprOnStr(pubrec),
-                                                    publish.qos,
+                                                    publish_ticket.qos,
                                                     ReprOnStr(publish))
-            elif publish and pubrec.packet_id in in_flight_packet_ids:
-                m = 'Received %s when packet_id=%d was next-in-flight; aborting.'
+            elif publish_ticket and pubrec.packet_id in in_flight_packet_ids:
+                m = 'Received unexpected %s when packet_id=%d was next-in-flight; aborting.'
                 self.__abort_protocol_violation(m,
                                                 ReprOnStr(pubrec),
-                                                publish.packet_id)
+                                                publish_ticket.packet_id)
             else:
-                m = 'Received %s when packet_id=%d was not in-flight; aborting.'
+                m = 'Received unexpected %s when packet_id=%d was not in-flight; aborting.'
                 self.__abort_protocol_violation(m,
                                                 ReprOnStr(pubrec),
                                                 pubrec.packet_id)

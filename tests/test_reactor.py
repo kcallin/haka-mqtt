@@ -387,6 +387,8 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         Returns
         -------
         MqttPublishTicket
+            The returned MqttPublishTicket will have its status set to
+            :py:const:`MqttPublishStatus.puback`.
         """
         self.start_to_connack()
 
@@ -466,16 +468,20 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
     def test_publish_qos1_pubrec(self):
-        publish = self.start_and_publish_qos1()
+        # CHECKED-KC0 (2018-09-17)
+        publish_ticket = self.start_and_publish_qos1()
 
-        puback = MqttPubrec(publish.packet_id)
+        puback = MqttPubrec(publish_ticket.packet_id)
         self.read_packet_then_block(puback)
         self.on_puback.assert_not_called()
         self.assertEqual(self.reactor.state, ReactorState.error)
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.puback)
 
         self.reactor.terminate()
 
     def test_puback_not_in_flight(self):
+        # CHECKED-KC0 (2018-09-17)
+
         self.start_to_connack()
 
         puback = MqttPuback(0)
@@ -484,6 +490,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_publish_disconnect_connect_republish_qos1(self):
+        # CHECKED-KC0 (2018-09-17)
         publish_ticket = self.start_and_publish_qos1()
 
         # Terminate
@@ -518,10 +525,10 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.read_packet_then_block(connack)
 
         self.assertTrue(publish_ticket.dupe)
-        #self.set_send_packet_side_effect(publish_ticket)
         self.assertEqual(self.reactor.state, ReactorState.connected)
         self.socket.send.assert_called_once_with(buffer_packet(publish))
         self.assertFalse(self.reactor.want_write())
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.puback)
 
         self.reactor.terminate()
 

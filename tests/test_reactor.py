@@ -95,8 +95,11 @@ class TestReactor(unittest.TestCase):
         self.log.info('%s setUp()', self._testMethodName)
 
     def tearDown(self):
-        self.assertEqual(0, len(self.scheduler))
         self.log.info('%s tearDown()', self._testMethodName)
+        self.assertEqual(0, len(self.scheduler))
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+        self.assertFalse(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
 
     def set_recv_side_effect(self, rv_iterable):
         self.socket.recv.side_effect = rv_iterable

@@ -50,7 +50,7 @@ class MqttPublishStatus(IntEnum):
 
 
 class MqttPublishTicket(MqttRequest):
-    def __init__(self, topic, payload, qos, retain, packet_id=None):
+    def __init__(self, topic, payload, qos, retain=False, packet_id=None):
         """
 
         Parameters
@@ -68,9 +68,9 @@ class MqttPublishTicket(MqttRequest):
 
         self.topic = topic
         self.payload = payload
-        self.dupe = False
         self.qos = qos
         self.retain = retain
+        self.__dupe = False
 
         if qos == 0:
             # The DUP flag MUST be set to 0 for all QoS 0 messages
@@ -78,6 +78,14 @@ class MqttPublishTicket(MqttRequest):
             assert self.dupe is False
 
         self.__status = MqttPublishStatus.preflight
+
+    @property
+    def dupe(self):
+        return self.__dupe
+
+    def _set_dupe(self):
+        self.__dupe = True
+
 
     def _set_status(self, s):
         """

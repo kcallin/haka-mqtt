@@ -478,6 +478,23 @@ class Reactor:
 
         self.__log.info('Starting.')
 
+        for p in self.__inflight_queue:
+            if p.packet_type is MqttControlPacketType.publish:
+                # Publish packets in self.__inflight_queue will be
+                # re-transmitted and the dupe flag must be set on the
+                # re-transmitted packet.
+                #
+                # [MQTT-3.3.1.-1]
+                #
+                if p.qos == 1:
+                    assert p.status is MqttPublishStatus.puback
+                    p._set_dupe()
+                elif p.qos == 2:
+                    if p.status is MqttPublishStatus.pubrec:
+                        p._set_dupe()
+                else:
+                    raise NotImplementedError()
+
         self.__preflight_queue = self.__inflight_queue + self.__preflight_queue
 
         self.__wbuf = bytearray()
@@ -813,6 +830,7 @@ class Reactor:
                 if publish.qos == 1:
                     del self.__inflight_queue[idx]
                     self.__log.info('Received %s.', repr(puback))
+                    publish._set_status(MqttPublishStatus.done)
 
                     if self.on_puback is not None:
                         self.on_puback(self, puback)

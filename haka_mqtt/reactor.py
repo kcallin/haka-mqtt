@@ -353,16 +353,6 @@ class Reactor:
         return self.__clean_session
 
     @property
-    def max_inflight_publish(self):
-        """
-        Returns
-        -------
-        int
-            Maximum number of in-flight publish messages.
-        """
-        return self.__max_inflight_publish
-
-    @property
     def client_id(self):
         return self.__client_id
 

@@ -338,6 +338,8 @@ class Reactor:
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
+        # TODO: Find place for this documentation.
+        # on_puback(puback); at time of call the associated MqttPublishTicket will have status set to done.
         self.on_puback = None
         self.on_suback = None
         self.on_connack = None

@@ -449,7 +449,8 @@ class Reactor:
         return req
 
     def publish(self, topic, payload, qos, retain=False):
-        """
+        """Publish may be called in any state.
+
         Parameters
         -----------
         topic: str
@@ -464,7 +465,6 @@ class Reactor:
         """
         self.__assert_state_rules()
         assert 0 <= qos <= 2
-        assert self.state is ReactorState.connected
 
         req = MqttPublishRequest(topic, payload, qos, retain)
         self.__preflight_queue.append(req)
@@ -552,10 +552,44 @@ class Reactor:
         self.__assert_state_rules()
 
     def want_read(self):
-        return self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping)
+        """True if the reactor is ready to process incoming socket data;
+        False otherwise.
+
+        Returns
+        -------
+        bool
+        """
+        if self.state in ACTIVE_STATES:
+            if self.state is ReactorState.connecting:
+                rv = False
+            else:
+                rv = True
+        else:
+            rv = False
+
+        return rv
 
     def want_write(self):
-        return bool(self.__wbuf) or self.state == ReactorState.connecting or bool(self.__preflight_queue)
+        """True if the reactor is ready write data to the socket; False
+        otherwise.
+
+        Returns
+        -------
+        bool
+        """
+        if self.state in ACTIVE_STATES:
+            if self.state is ReactorState.connecting:
+                rv = True
+            elif self.state is ReactorState.connack:
+                rv = bool(self.__wbuf)
+            elif bool(self.__wbuf) or bool(self.__preflight_queue):
+                rv = True
+            else:
+                rv = False
+        else:
+            rv = False
+
+        return rv
 
     def __decode_packet_body(self, header, num_header_bytes, packet_class):
         num_packet_bytes = num_header_bytes + header.remaining_len

@@ -36,6 +36,16 @@ from haka_mqtt.scheduler import Scheduler
 
 
 def buffer_packet(packet):
+    """Creates a str for packet.encode and returns it.
+
+    Parameters
+    ----------
+    packet: MqttPacketBody
+
+    Returns
+    -------
+    str
+    """
     bio = BytesIO()
     packet.encode(bio)
     return bio.getvalue()
@@ -111,6 +121,12 @@ class TestReactor(unittest.TestCase):
         self.set_send_side_effect([sum(len(buffer_packet(p)) for p in packet_it)])
 
     def send_packet(self, p):
+        """Calls write and expects to find a serialized version of p in
+        the socket send buffer.
+
+        Parameters
+        -----------
+        Mqtt"""
         buf = buffer_packet(p)
         self.set_send_side_effect([len(buf)])
 
@@ -140,10 +156,18 @@ class TestReactor(unittest.TestCase):
         self.assertFalse(self.reactor.want_write())
 
     def start_to_connect(self):
+        """
+        1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
+        2. Socket becomes connected.
+        3. MqttConnect is sent to server.
+        """
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
+        # Set up start call.
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+
         self.reactor.start()
+
         self.socket.connect.assert_called_once_with(self.endpoint)
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connecting, self.reactor.state)
@@ -153,6 +177,8 @@ class TestReactor(unittest.TestCase):
         self.socket.getsockopt.return_value = 0
         self.send_packet(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
         self.assertEqual(self.reactor.state, ReactorState.connack)
+        self.assertFalse(self.reactor.want_write())
+        self.assertTrue(self.reactor.want_read())
 
     def start_to_immediate_connect(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
@@ -171,15 +197,29 @@ class TestReactor(unittest.TestCase):
         self.socket.send.reset_mock()
 
     def start_to_connack(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+
+        """
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
+        # Call to start; connect does not immediately complete
+        # Setup inputs for start
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+
+        # Call
         self.reactor.start()
+
+        # Verify start post-conditions.
         self.socket.connect.assert_called_once_with(self.endpoint)
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
+
 
         self.socket.getsockopt.return_value = 0
         self.send_packet(MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period))
@@ -349,14 +389,14 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
         publish = MqttPublish(0, 'topic', 'outgoing', False, 1, False)
         self.set_send_packet_side_effect(publish)
-        actual_publish = self.reactor.publish(publish.topic,
+        publish_ticket = self.reactor.publish(publish.topic,
                                               publish.payload,
                                               publish.qos,
                                               publish.retain)
-        pub_status = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
+        expected_publish_ticket = MqttPublishRequest(publish.topic, publish.payload, publish.qos, publish.retain)
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
-        self.assertEqual(pub_status, actual_publish)
+        self.assertEqual(expected_publish_ticket, publish_ticket)
         self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(publish))
         self.assertFalse(self.reactor.want_write())

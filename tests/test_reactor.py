@@ -73,8 +73,31 @@ class TestReactor(unittest.TestCase):
 
         return p
 
+    def setup_logging(self):
+        log_env_var = 'LOGGING'
+        formatter = logging.Formatter('%(asctime)s %(name)s %(levelname)s  %(message)s')
+        if log_env_var in os.environ:
+            self.handler = logging.StreamHandler(sys.stdout)
+        else:
+            self.handler = logging.NullHandler()
+        self.handler.setFormatter(formatter)
+
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.logs = [
+            logging.getLogger('mqtt_reactor'),
+            self.log
+        ]
+        for log in self.logs:
+            log.setLevel(logging.DEBUG)
+            log.addHandler(self.handler)
+
+    def teardown_logging(self):
+        for log in self.logs:
+            log.removeHandler(self.handler)
+
     def setUp(self):
-        logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+        self.setup_logging()
+
         self.socket = Mock()
         self.endpoint = ('test.mosquitto.org', 1883)
         self.client_id = 'client'
@@ -99,15 +122,17 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_puback = self.on_puback
         self.reactor.on_suback = self.on_suback
 
-        self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
 
     def tearDown(self):
-        self.log.info('%s tearDown()', self._testMethodName)
-        self.assertEqual(0, len(self.scheduler))
-        self.assertTrue(self.reactor.state in INACTIVE_STATES)
-        self.assertFalse(self.reactor.want_read())
-        self.assertFalse(self.reactor.want_write())
+        try:
+            self.log.info('%s tearDown()', self._testMethodName)
+            self.assertEqual(0, len(self.scheduler))
+            self.assertTrue(self.reactor.state in INACTIVE_STATES)
+            self.assertFalse(self.reactor.want_read())
+            self.assertFalse(self.reactor.want_write())
+        finally:
+            self.teardown_logging()
 
     def set_recv_side_effect(self, rv_iterable):
         self.socket.recv.side_effect = rv_iterable

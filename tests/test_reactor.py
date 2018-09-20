@@ -220,6 +220,35 @@ class TestReactor(unittest.TestCase):
         self.assertFalse(self.reactor.want_write())
         self.assertTrue(self.reactor.want_read())
 
+    def subscribe_and_suback(self, topics):
+        """
+
+        Parameters
+        ----------
+        topics: iterable of MqttTopic
+
+        Returns
+        -------
+
+        """
+
+        # Push subscribe onto the wire.
+        subscribe = MqttSubscribe(0, topics)
+        self.reactor.subscribe(subscribe.topics)
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+
+        # Allow reactor to push subscribe onto the wire.
+        self.set_send_packet_side_effect(subscribe)
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(buffer_packet(subscribe))
+        self.socket.send.reset_mock()
+
+        # Feed reactor a suback
+        suback = MqttSuback(subscribe.packet_id, [SubscribeResult(t.max_qos) for t in topics])
+        self.read_packet_then_block(suback)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
 
 class TestConnect(TestReactor, unittest.TestCase):
     def test_immediate_connect(self):
@@ -261,23 +290,11 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         # Subscribe to topic
-        topic_name = 'bear_topic'
-        p = MqttSubscribe(0, [MqttTopic(topic_name, 0)])
-        self.set_send_packet_side_effect(p)
-        self.reactor.subscribe(p.topics)
-        self.socket.send.assert_not_called()
-        self.assertTrue(self.reactor.want_write())
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(p))
-        self.socket.send.reset_mock()
-
-        # Acknowledge subscription to new topic
-        suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
-        self.read_packet_then_block(suback)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        topics = [MqttTopic('bear_topic', 1)]
+        self.subscribe_and_suback(topics)
 
         # Publish new message
-        p = MqttPublish(1, topic_name, 'outgoing', False, 1, False)
+        p = MqttPublish(1, topics[0].name, 'outgoing', False, 1, False)
         self.set_send_packet_side_effect(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_not_called()
@@ -292,7 +309,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.read_packet_then_block(p)
         self.socket.send.assert_not_called()
 
-        publish = MqttPublish(1, topic_name, 'incoming', False, 1, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_side_effect(puback)
         self.read_packet_then_block(publish)
@@ -321,19 +338,11 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.read_packet_then_block(connack)
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
-        TOPIC = 'bear_topic'
-        p = MqttSubscribe(0, [MqttTopic(TOPIC, 0)])
-        self.set_send_packet_side_effect(p)
-        self.reactor.subscribe(p.topics)
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(p))
-        self.socket.send.reset_mock()
+        # Subscribe to topic
+        topics = [MqttTopic('bear_topic', 1)]
+        self.subscribe_and_suback(topics)
 
-        suback = MqttSuback(p.packet_id, [SubscribeResult.qos0])
-        self.read_packet_then_block(suback)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
-
-        p = MqttPublish(1, TOPIC, 'outgoing', False, 1, False)
+        p = MqttPublish(1, topics[0].name, 'outgoing', False, 1, False)
         self.set_send_packet_side_effect(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.reactor.write()
@@ -343,7 +352,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         p = MqttPuback(p.packet_id)
         self.read_packet_then_block(p)
 
-        publish = MqttPublish(1, TOPIC, 'incoming', False, 1, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_side_effect(puback)
         self.read_packet_then_block(publish)
@@ -823,26 +832,11 @@ class TestReceivePathQos0(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connack()
 
-        # Create subscribe call.
-        subscribe = MqttSubscribe(0, [MqttTopic('bear_topic', 0)])
-        self.reactor.subscribe(subscribe.topics)
-        self.assertTrue(self.reactor.want_write())
-        self.socket.send.assert_not_called()
-
-        # Allow reactor to put subscribe in flight.
-        self.set_send_packet_side_effect(subscribe)
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(subscribe))
-        self.socket.send.reset_mock()
-
-        # Receive suback
-        suback = MqttSuback(subscribe.packet_id, [SubscribeResult.qos0])
-        self.read_packet_then_block(suback)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
-        self.on_publish.assert_not_called()
+        topics = [MqttTopic('bear_topic', 0)]
+        self.subscribe_and_suback(topics)
 
         # Receive QoS=0 publish
-        publish = MqttPublish(1, subscribe.topics[0].name, 'incoming', False, 0, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, 0, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
@@ -857,20 +851,11 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connack()
 
-        subscribe = MqttSubscribe(0, [MqttTopic('bear_topic', 1)])
-        self.set_send_packet_side_effect(subscribe)
-        self.reactor.subscribe(subscribe.topics)
-        self.socket.send.assert_not_called()
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(subscribe))
-        self.socket.send.reset_mock()
-
-        suback = MqttSuback(subscribe.packet_id, [SubscribeResult.qos1])
-        self.read_packet_then_block(suback)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        topics = [MqttTopic('bear_topic', 0)]
+        self.subscribe_and_suback(topics)
 
         self.on_publish.assert_not_called()
-        publish = MqttPublish(1, subscribe.topics[0].name, 'incoming', False, 1, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, 1, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
@@ -887,20 +872,11 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connack()
 
-        TOPIC = 'bear_topic'
-        p = MqttSubscribe(0, [MqttTopic(TOPIC, 2)])
-        self.set_send_packet_side_effect(p)
-        self.reactor.subscribe(p.topics)
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(p))
-        self.socket.send.reset_mock()
-
-        suback = MqttSuback(p.packet_id, [SubscribeResult.qos2])
-        self.read_packet_then_block(suback)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
+        topics = [MqttTopic('bear_topic', 2)]
+        self.subscribe_and_suback(topics)
 
         self.on_publish.assert_not_called()
-        publish = MqttPublish(1, TOPIC, 'outgoing', False, 2, False)
+        publish = MqttPublish(1, topics[0].name, 'outgoing', False, 2, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()

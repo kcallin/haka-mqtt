@@ -512,9 +512,9 @@ class Reactor:
         if self.state in INACTIVE_STATES:
             self.__start()
         elif self.state in (ReactorState.connecting, ReactorState.connack):
-            self.__log.warning("Start called while already connecting to server.")
+            self.__log.warning("Start called while already connecting to server; taking no additional action.")
         elif self.state is ReactorState.connected:
-            self.__log.warning("Start called while already connected.")
+            self.__log.warning("Start called while already connected; taking no action.")
         elif self.state is ReactorState.stopping:
             self.__log.warning("Start called while stopping; stop process cannot be aborted.")
         else:
@@ -724,7 +724,8 @@ class Reactor:
                 self.__log.error('Connect failed: not authorized.')
                 self.__abort(MqttConnectFail(connack.return_code))
             else:
-                assert False
+                # TODO: This is a protocol violation.
+                raise NotImplementedError(connack.return_code)
         else:
             self.__abort_protocol_violation('Received connack at an inappropriate time.')
 
@@ -1235,10 +1236,12 @@ class Reactor:
     def write(self):
         """If there is any data queued to be written to the underlying
         socket then a single call to socket send will be made to try
-        and flush it to the socket write buffer."""
+        and flush it to the socket write buffer.
+
+        If self.state is an inactive state then no action is taken."""
         self.__assert_state_rules()
 
-        if self.state not in INACTIVE_STATES:
+        if self.state in ACTIVE_STATES:
             if self.state == ReactorState.connecting:
                 e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
                 if e == 0:
@@ -1251,5 +1254,9 @@ class Reactor:
                 self.__launch_next_queued_packet()
             else:
                 raise NotImplementedError(self.state)
+        elif self.state in INACTIVE_STATES:
+            pass
+        else:
+            raise NotImplementedError(self.state)
 
         self.__assert_state_rules()

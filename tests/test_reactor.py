@@ -840,7 +840,7 @@ class TestReceivePathQos0(TestReactor, unittest.TestCase):
         self.subscribe_and_suback(topics)
 
         # Receive QoS=0 publish
-        publish = MqttPublish(1, topics[0].name, 'incoming', False, 0, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, topics[0].max_qos, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
@@ -855,11 +855,11 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connack()
 
-        topics = [MqttTopic('bear_topic', 0)]
+        topics = [MqttTopic('bear_topic', 1)]
         self.subscribe_and_suback(topics)
 
         self.on_publish.assert_not_called()
-        publish = MqttPublish(1, topics[0].name, 'incoming', False, 1, False)
+        publish = MqttPublish(1, topics[0].name, 'incoming', False, topics[0].max_qos, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()
@@ -880,7 +880,7 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
         self.subscribe_and_suback(topics)
 
         self.on_publish.assert_not_called()
-        publish = MqttPublish(1, topics[0].name, 'outgoing', False, 2, False)
+        publish = MqttPublish(1, topics[0].name, 'outgoing', False, topics[0].max_qos, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.read_packet_then_block(publish)
         self.on_publish.assert_called_once()

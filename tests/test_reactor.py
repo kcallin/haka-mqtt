@@ -824,6 +824,40 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
 
+class TestReceivePathQos0(TestReactor, unittest.TestCase):
+    def test_recv_publish(self):
+        self.start_to_connack()
+
+        # Create subscribe call.
+        subscribe = MqttSubscribe(0, [MqttTopic('bear_topic', 0)])
+        self.reactor.subscribe(subscribe.topics)
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+
+        # Allow reactor to put subscribe in flight.
+        self.set_send_packet_side_effect(subscribe)
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(buffer_packet(subscribe))
+        self.socket.send.reset_mock()
+
+        # Receive suback
+        suback = MqttSuback(subscribe.packet_id, [SubscribeResult.qos0])
+        self.read_packet_then_block(suback)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.on_publish.assert_not_called()
+
+        # Receive QoS=0 publish
+        publish = MqttPublish(1, subscribe.topics[0].name, 'incoming', False, 0, False)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.read_packet_then_block(publish)
+        self.on_publish.assert_called_once()
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+
+        # Immediate shut-down.
+        self.reactor.terminate()
+
+
 class TestReceivePathQos1(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
         self.start_to_connack()

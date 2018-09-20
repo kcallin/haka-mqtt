@@ -464,6 +464,7 @@ class Reactor:
 
         self.__log.info('Starting.')
 
+        preflight_queue = []
         for p in self.__inflight_queue:
             if p.packet_type is MqttControlPacketType.publish:
                 # Publish packets in self.__inflight_queue will be
@@ -473,15 +474,21 @@ class Reactor:
                 # [MQTT-3.3.1.-1]
                 #
                 if p.qos == 1:
-                    assert p.status is MqttPublishStatus.puback
+                    assert p.status is MqttPublishStatus.puback, p.status
                     p._set_dupe()
                 elif p.qos == 2:
                     if p.status is MqttPublishStatus.pubrec:
                         p._set_dupe()
                 else:
                     raise NotImplementedError()
+                preflight_queue.append(p)
 
-        self.__preflight_queue = self.__inflight_queue + self.__preflight_queue
+        for p in self.__preflight_queue:
+            if p.packet_type in (MqttControlPacketType.publish, MqttControlPacketType.pubrel):
+                preflight_queue.append(p)
+        
+        self.__inflight_queue = []
+        self.__preflight_queue = preflight_queue
 
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
@@ -497,7 +504,7 @@ class Reactor:
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:
                 # Connection in progress.
-                self.__log.info('Connecting.')
+                self.__log.info('Connecting to %s:%d.', *self.endpoint)
             else:
                 self.__abort_socket_error(SocketError(e.errno))
 
@@ -527,6 +534,7 @@ class Reactor:
         self.__assert_state_rules()
         if self.state is ReactorState.connected:
             self.__log.info('Stopping.')
+            # TODO: Disconnect method must be flushed!
             self.__preflight_queue.append(MqttDisconnect())
 
             if not self.__wbuf:
@@ -1168,7 +1176,13 @@ class Reactor:
                           ReactorState.connack,
                           ReactorState.connected,
                           ReactorState.stopping):
-            self.socket.shutdown(socket.SHUT_RDWR)
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except socket.error as e:
+                if e.errno == errno.ENOTCONN:
+                    pass
+                else:
+                    raise
             self.socket.close()
 
         self.__wbuf = bytearray()

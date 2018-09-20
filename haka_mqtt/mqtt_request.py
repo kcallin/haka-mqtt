@@ -164,21 +164,23 @@ class MqttPublishTicket(MqttRequest):
         )
         return '{}<self.state={}, packet_id={}, topic={}, payload={}, qos={}, dupe={}, retain={}>'.format(*params)
 
+
 class MqttSubscribeStatus(IntEnum):
     preflight = 0
     ack = 1
     done = 2
 
 
-class MqttSubscribeRequest(MqttRequest):
+class MqttSubscribeTicket(MqttRequest):
     def __init__(self, topics):
         """
 
         Parameters
         ----------
         topics: iterable of MqttTopic
+            Must be one or more topics.
         """
-        super(MqttSubscribeRequest, self).__init__(MqttControlPacketType.subscribe)
+        super(MqttSubscribeTicket, self).__init__(MqttControlPacketType.subscribe)
 
         self.topics = tuple(topics)
         if isinstance(topics, (str, unicode, bytes)):

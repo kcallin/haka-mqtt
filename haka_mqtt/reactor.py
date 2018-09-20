@@ -33,7 +33,8 @@ from haka_mqtt.mqtt import (
     ConnackResult,
     SubscribeResult,
 )
-from haka_mqtt.mqtt_request import MqttSubscribeRequest, MqttUnsubscribeRequest, MqttPublishTicket, MqttPublishStatus
+from haka_mqtt.mqtt_request import MqttSubscribeTicket, MqttUnsubscribeRequest, MqttPublishTicket, MqttPublishStatus, \
+    MqttSubscribeStatus
 from haka_mqtt.on_str import HexOnStr, ReprOnStr
 
 
@@ -396,13 +397,13 @@ class Reactor:
 
         Returns
         --------
-        MqttSubscribeRequest
+        MqttSubscribeTicket
         """
         assert self.state == ReactorState.connected
 
         self.__assert_state_rules()
 
-        req = MqttSubscribeRequest(topics)
+        req = MqttSubscribeTicket(topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
@@ -418,7 +419,7 @@ class Reactor:
 
         Returns
         --------
-        MqttSubscribeRequest
+        MqttSubscribeTicket
         """
         assert self.state == ReactorState.connected
 
@@ -782,6 +783,7 @@ class Reactor:
             if subscribe:
                 if len(suback.results) == len(subscribe.topics):
                     self.__log.info('Received %s.', repr(suback))
+                    subscribe._set_status(MqttSubscribeStatus.done)
                     if self.on_suback is not None:
                         self.on_suback(self, suback)
                 else:
@@ -1068,6 +1070,7 @@ class Reactor:
             # elif packet.packet_type is MqttControlPacketType.pubcomp:
             #     pass
             elif packet_record.packet_type is MqttControlPacketType.subscribe:
+                packet_record._set_status(MqttSubscribeStatus.ack)
                 self.__inflight_queue.append(packet_record)
             # elif packet.packet_type is MqttControlPacketType.suback:
             #     pass

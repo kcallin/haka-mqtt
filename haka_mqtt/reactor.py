@@ -357,7 +357,7 @@ class Reactor:
         times the Keep Alive time period, it MUST disconnect the
         Network Connection to the Client as if the network had failed.
         [MQTT-3.1.2-24]"""
-        return self.keepalive_period * 1.5
+        return int(self.keepalive_period * 1.5)
 
     @property
     def error(self):

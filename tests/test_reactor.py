@@ -370,11 +370,6 @@ class TestConnackFail(TestReactor, unittest.TestCase):
 
 
 class TestSendPathQos0(TestReactor, unittest.TestCase):
-    def reactor_properties(self):
-        p = super(type(self), self).reactor_properties()
-        p.clean_session = False
-        return p
-
     def test_start_and_publish_qos0(self):
         """
         1. Call start
@@ -390,7 +385,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
             The returned MqttPublishTicket will have its status set to
             :py:const:`MqttPublishStatus.done`.
         """
-        # CHECKED-KC0 (2018-09-17)
+        # CHECKED-KC0 (2018-09-19)
         self.start_to_connack()
 
         # Create publish

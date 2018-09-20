@@ -228,10 +228,6 @@ class TestReactor(unittest.TestCase):
         Parameters
         ----------
         topics: iterable of MqttTopic
-
-        Returns
-        -------
-
         """
 
         # Push subscribe onto the wire.

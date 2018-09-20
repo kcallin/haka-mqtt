@@ -87,6 +87,7 @@ class TestReactor(unittest.TestCase):
         self.on_pubcomp = Mock()
         self.on_connack = Mock()
         self.on_puback = Mock()
+        self.on_suback = Mock()
 
         self.properties = self.reactor_properties()
         self.reactor = Reactor(self.properties)
@@ -96,6 +97,7 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_pubcomp = self.on_pubcomp
         self.reactor.on_pubrec = self.on_pubrec
         self.reactor.on_puback = self.on_puback
+        self.reactor.on_suback = self.on_suback
 
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('%s setUp()', self._testMethodName)
@@ -243,11 +245,14 @@ class TestReactor(unittest.TestCase):
         self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(subscribe))
         self.socket.send.reset_mock()
+        self.on_suback.assert_not_called()
 
         # Feed reactor a suback
         suback = MqttSuback(subscribe.packet_id, [SubscribeResult(t.max_qos) for t in topics])
         self.read_packet_then_block(suback)
         self.assertEqual(self.reactor.state, ReactorState.connected)
+        self.on_suback.assert_called_once_with(self.reactor, suback)
+        self.on_suback.reset_mock()
 
 
 class TestConnect(TestReactor, unittest.TestCase):

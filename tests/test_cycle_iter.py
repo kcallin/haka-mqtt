@@ -7,6 +7,8 @@ from haka_mqtt.cycle_iter import IntegralCycleIter
 class TestIterCycles(unittest.TestCase):
     def test_cycle(self):
         it = IntegralCycleIter(0, 5)
+        it_copy = iter(it)
+        self.assertEqual(id(it), id(it_copy))
         numbers = []
         while len(numbers) < 14:
             numbers.append(next(it))

@@ -369,6 +369,57 @@ class TestConnackFail(TestReactor, unittest.TestCase):
             self.assertEqual(self.reactor.error, MqttConnectFail(fail_code))
 
 
+class TestSendPathQos0(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        p = super(type(self), self).reactor_properties()
+        p.clean_session = False
+        return p
+
+    def test_start_and_publish_qos0(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+        5. Publishes a QoS=0 packet;
+        6. Calls write and places publish packet in-flight.
+
+        Returns
+        -------
+        MqttPublishTicket
+            The returned MqttPublishTicket will have its status set to
+            :py:const:`MqttPublishStatus.done`.
+        """
+        # CHECKED-KC0 (2018-09-17)
+        self.start_to_connack()
+
+        # Create publish
+        ept = MqttPublishTicket('topic', 'outgoing', 0)
+        publish_ticket = self.reactor.publish(ept.topic,
+                                              ept.payload,
+                                              ept.qos,
+                                              ept.retain)
+        self.assertEqual(ept, publish_ticket)
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
+        self.assertIsNone(publish_ticket.packet_id)
+
+        # Write is called; reactor attempts to push packet to socket
+        # send buffer.
+        #
+        publish = MqttPublish(0, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
+        self.set_send_packet_side_effect(publish)
+        self.reactor.write()
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.done)
+        self.assertEqual(publish_ticket.packet_id, publish.packet_id)
+        self.socket.send.assert_called_once_with(buffer_packet(publish))
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.reset_mock()
+
+        self.reactor.terminate()
+
+
 class TestSendPathQos1(TestReactor, unittest.TestCase):
     def reactor_properties(self):
         p = super(type(self), self).reactor_properties()

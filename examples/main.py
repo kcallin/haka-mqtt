@@ -1,7 +1,9 @@
 import logging
+import ssl
 import sys
 import socket
 from select import select
+from ssl import wrap_socket
 from time import time
 
 from haka_mqtt.mqtt import MqttTopic
@@ -81,17 +83,39 @@ def on_publish(reactor, p):
 def create_socket():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(0)
+
     return sock
+
+
+def ssl_create_socket():
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(0)
+
+    return ctx.wrap_socket(sock)
 
 
 def main():
     logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
-    endpoint = ('test.mosquitto.org', 1883)
+
+
+    #
+    # 1883 : MQTT, unencrypted
+    # 8883 : MQTT, encrypted
+    # 8884 : MQTT, encrypted, client certificate required
+    # 8080 : MQTT over WebSockets, unencrypted
+    # 8081 : MQTT over WebSockets, encrypted
+    #
+    # from https://test.mosquitto.org/ (2018-09-19)
+    #
+
+    endpoint = ('test.mosquitto.org', 8883)
     clock = SystemClock()
 
     scheduler = Scheduler()
     p = ReactorProperties()
-    p.socket_factory = create_socket
+    p.socket_factory = ssl_create_socket
     p.endpoint = endpoint
     p.clock = clock
     p.keepalive_period = 20
@@ -158,7 +182,7 @@ def main():
         if select_timeout < 0:
             select_timeout = 0
 
-    print(repr(reactor.error))
+    #print(repr(reactor.error))
 
 
 if __name__ == '__main__':

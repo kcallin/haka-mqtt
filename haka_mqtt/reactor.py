@@ -284,7 +284,7 @@ class Reactor:
         assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
 
-        self.__log = logging.getLogger('mqtt_reactor')
+        self.__log = logging.getLogger('haka')
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
 

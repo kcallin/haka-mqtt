@@ -84,7 +84,7 @@ class TestReactor(unittest.TestCase):
 
         self.log = logging.getLogger(self.__class__.__name__)
         self.logs = [
-            logging.getLogger('mqtt_reactor'),
+            logging.getLogger('haka'),
             self.log
         ]
         for log in self.logs:

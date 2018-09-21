@@ -553,16 +553,21 @@ class Reactor:
         self.__assert_state_rules()
 
     def terminate(self):
+        """When in an active state immediately shuts down any socket
+        reading and writing, closes the socket, cancels all outstanding
+        scheduler deadlines, puts the reactor into state
+        ReactorState.stopped, then calls self.on_connect_fail
+        (if in a connect/connack state) or alternatively
+        self.on_disconnect if in some other active state.  When reactor
+        is not in an inactive state this method has no effect.
+        """
         self.__assert_state_rules()
 
         self.__log.info('Terminating.')
 
-        # INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
         if self.state in ACTIVE_STATES:
             self.__terminate(ReactorState.stopped)
-        elif self.state is ReactorState.init:
-            self.__terminate(ReactorState.stopped)
-        elif self.state in (ReactorState.stopped, ReactorState.error):
+        elif self.state in INACTIVE_STATES:
             pass
         else:
             raise NotImplementedError(self.state)

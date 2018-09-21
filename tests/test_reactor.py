@@ -104,6 +104,8 @@ class TestReactor(unittest.TestCase):
         self.keepalive_period = 10*60
         self.scheduler = Scheduler()
 
+        self.on_connect_fail = Mock()
+        self.on_disconnect = Mock()
         self.on_publish = Mock()
         self.on_pubrel = Mock()
         self.on_pubrec = Mock()
@@ -121,6 +123,8 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_pubrec = self.on_pubrec
         self.reactor.on_puback = self.on_puback
         self.reactor.on_suback = self.on_suback
+        self.reactor.on_connect_fail = self.on_connect_fail
+        self.reactor.on_disconnect = self.on_disconnect
 
         self.log.info('%s setUp()', self._testMethodName)
 
@@ -169,6 +173,19 @@ class TestReactor(unittest.TestCase):
         self.reactor.write()
         self.socket.send.assert_called_once_with(buf)
         self.socket.send.reset_mock()
+
+    def recv_disconnect(self, exception):
+        """Calls write and expects to find a serialized version of p in
+        the socket send buffer.
+
+        Parameters
+        -----------
+        Mqtt"""
+        self.set_send_side_effect([exception])
+
+        self.reactor.read()
+        self.socket.recv.assert_called_once()
+        self.socket.recv.reset_mock()
 
     def set_send_packet_drip_and_write(self, p):
         buf = buffer_packet(p)
@@ -288,6 +305,28 @@ class TestConnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connected)
 
         self.reactor.terminate()
+
+    def test_connect_fail_enohost(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        self.socket.connect.side_effect = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        self.reactor.start()
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.on_connect_fail.assert_called_once()
+        #
+        #
+        # connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
+        # self.set_send_packet_side_effect(connect)
+        #
+        # self.reactor.start()
+        # self.socket.connect.assert_called_once_with(self.endpoint)
+        # self.socket.connect.reset_mock()
+        # self.assertEqual(ReactorState.connack, self.reactor.state)
+        # self.assertTrue(self.reactor.want_read())
+        # self.assertFalse(self.reactor.want_write())
+        # self.socket.send.assert_called_once_with(buffer_packet(connect))
+        # self.assertEqual(self.reactor.state, ReactorState.connack)
+        # self.socket.send.reset_mock()
 
 
 class TestReactorPaths(TestReactor, unittest.TestCase):

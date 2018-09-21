@@ -322,6 +322,8 @@ class Reactor:
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
+        self.on_connect_fail = None
+        self.on_disconnect = None
         # TODO: Find place for this documentation.
         # on_puback(puback); at time of call the associated MqttPublishTicket will have status set to done.
         self.on_puback = None
@@ -494,8 +496,8 @@ class Reactor:
         self.__rbuf = bytearray()
         self.socket = self.__socket_factory()
 
+        self.__state = ReactorState.connecting
         try:
-            self.__state = ReactorState.connecting
             self.socket.connect(self.endpoint)
             self.__on_connect()
         except socket.gaierror as e:
@@ -555,10 +557,15 @@ class Reactor:
 
         self.__log.info('Terminating.')
 
-        if self.state not in INACTIVE_STATES:
-            self.__terminate()
-
-        self.__state = ReactorState.stopped
+        # INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
+        if self.state in ACTIVE_STATES:
+            self.__terminate(ReactorState.stopped)
+        elif self.state is ReactorState.init:
+            self.__terminate(ReactorState.stopped)
+        elif self.state in (ReactorState.stopped, ReactorState.error):
+            pass
+        else:
+            raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
 
@@ -1171,11 +1178,22 @@ class Reactor:
 
         return num_bytes_written
 
-    def __terminate(self):
-        if self.state in (ReactorState.connecting,
-                          ReactorState.connack,
-                          ReactorState.connected,
-                          ReactorState.stopping):
+    def __terminate(self, state, error=None):
+        """
+
+        Parameters
+        ----------
+        state: ReactorState
+        error: ReactorError
+        """
+        if self.state in ACTIVE_STATES:
+            if self.state in (ReactorState.connecting, ReactorState.connack):
+                on_disconnect_cb = self.on_connect_fail
+            elif self.state in (ReactorState.connected, ReactorState.stopping):
+                on_disconnect_cb = self.on_disconnect
+            else:
+                raise NotImplementedError(self.state)
+
             try:
                 self.socket.shutdown(socket.SHUT_RDWR)
             except socket.error as e:
@@ -1184,6 +1202,8 @@ class Reactor:
                 else:
                     raise
             self.socket.close()
+        else:
+            on_disconnect_cb = None
 
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
@@ -1195,6 +1215,12 @@ class Reactor:
         if self.__keepalive_due_deadline is not None:
             self.__keepalive_due_deadline.cancel()
             self.__keepalive_due_deadline = None
+
+        self.__state = state
+        self.__error = error
+
+        if callable(on_disconnect_cb):
+            on_disconnect_cb(self)
 
     def __abort_socket_error(self, se):
         """
@@ -1214,10 +1240,7 @@ class Reactor:
         self.__abort(ProtocolViolationError(m % params))
 
     def __abort(self, e):
-        self.__terminate()
-
-        self.__state = ReactorState.error
-        self.__error = e
+        self.__terminate(ReactorState.error, e)
 
     def __keepalive_due_timeout(self):
         self.__assert_state_rules()

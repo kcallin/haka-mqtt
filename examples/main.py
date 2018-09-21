@@ -1,3 +1,4 @@
+import argparse
 import logging
 import ssl
 import sys
@@ -96,7 +97,47 @@ def ssl_create_socket():
     return ctx.wrap_socket(sock)
 
 
-def main():
+def argparse_endpoint(s):
+    """
+
+    Parameters
+    ----------
+    s: str
+
+    Returns
+    -------
+    (str, int)
+        hostname, port tuple.
+    """
+    words = s.split(':')
+    if len(words) != 2:
+        raise argparse.ArgumentTypeError('Format of endpoint must be hostname:port.')
+    host, port = words
+
+    try:
+        port = int(port)
+        if not 1 <= port <= 2**16-1:
+            raise argparse.ArgumentTypeError('Port must be in the range 1 <= port <= 65535.')
+    except ValueError:
+        raise argparse.ArgumentTypeError('Format of endpoint must be hostname:port.')
+
+    return host, port
+
+
+def create_parser():
+    """
+
+    Returns
+    -------
+    argparse.ArgumentParser
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("endpoint", type=argparse_endpoint)
+
+    return parser
+
+
+def main(args=sys.argv[1:]):
     logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 
 
@@ -110,7 +151,10 @@ def main():
     # from https://test.mosquitto.org/ (2018-09-19)
     #
 
-    endpoint = ('test.mosquitto.org', 8883)
+    parser = create_parser()
+    ns = parser.parse_args(args)
+
+    endpoint = ns.endpoint
     clock = SystemClock()
 
     scheduler = Scheduler()
@@ -186,4 +230,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

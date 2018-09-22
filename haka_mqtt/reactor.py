@@ -322,17 +322,24 @@ class Reactor:
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
+        # Connection Callbacks
         self.on_connect_fail = None
         self.on_disconnect = None
+        self.on_connack = None
+
+        # Send path
+        self.on_pubrec = None
+        self.on_pubcomp = None
+
+        # Subscribe path
+        self.on_suback = None
+
+        # Receive path
+        self.on_publish = None
         # TODO: Find place for this documentation.
         # on_puback(puback); at time of call the associated MqttPublishTicket will have status set to done.
         self.on_puback = None
-        self.on_suback = None
-        self.on_connack = None
-        self.on_publish = None
         self.on_pubrel = None
-        self.on_pubcomp = None
-        self.on_pubrec = None
 
     @property
     def clean_session(self):

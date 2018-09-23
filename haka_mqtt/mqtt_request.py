@@ -4,11 +4,12 @@ from haka_mqtt.mqtt import MqttControlPacketType, MqttPublish, MqttSubscribe, Mq
 
 
 class MqttRequest(object):
-    def __init__(self, packet_type, packet_id=None):
+    def __init__(self, packet_id, packet_type):
         """
 
         Parameters
         ----------
+        packet_id: int
         packet_type: MqttControlPacketType
         """
         self.__packet_id = packet_id
@@ -61,7 +62,7 @@ class MqttPublishTicket(MqttRequest):
             0 <= qos <= 2
         retain: bool
         """
-        super(MqttPublishTicket, self).__init__(MqttControlPacketType.publish, packet_id)
+        super(MqttPublishTicket, self).__init__(packet_id, MqttControlPacketType.publish)
 
         assert 0 <= qos <= 2
         assert isinstance(retain, bool)
@@ -180,7 +181,7 @@ class MqttSubscribeTicket(MqttRequest):
         topics: iterable of MqttTopic
             Must be one or more topics.
         """
-        super(MqttSubscribeTicket, self).__init__(MqttControlPacketType.subscribe)
+        super(MqttSubscribeTicket, self).__init__(None, MqttControlPacketType.subscribe)
 
         self.topics = tuple(topics)
         if isinstance(topics, (str, unicode, bytes)):
@@ -233,7 +234,7 @@ class MqttUnsubscribeRequest(MqttRequest):
         ----------
         topics: iterable of str
         """
-        super(MqttUnsubscribeRequest, self).__init__(MqttControlPacketType.unsubscribe)
+        super(MqttUnsubscribeRequest, self).__init__(None, MqttControlPacketType.unsubscribe)
 
         self.topics = tuple(topics)
 

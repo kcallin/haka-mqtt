@@ -463,7 +463,7 @@ class Reactor:
         self.__assert_state_rules()
         assert 0 <= qos <= 2
 
-        req = MqttPublishTicket(topic, payload, qos, retain)
+        req = MqttPublishTicket(self.__acquire_packet_id(), topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
 
@@ -1013,9 +1013,6 @@ class Reactor:
         """Takes messages from the preflight_queue and places them in
         the in_flight_queues.
 
-        Takes messages from the in_flight_queues in the order they
-        appear in the preflight_queues.
-
         Returns
         -------
         int
@@ -1036,11 +1033,7 @@ class Reactor:
         packet_end_offsets = [wbuf_size]
         bio = BytesIO()
         num_new_bytes = 0
-        packet_id_iter = copy(self.__send_path_packet_id_iter)
         for packet_record in self.__preflight_queue:
-            if hasattr(packet_record, 'packetize'):
-                packet_record = packet_record.packetize(packet_id_iter)
-
             num_bytes_encoded = packet_record.encode(bio)
             if wbuf_size + num_bytes_encoded <= max_buf_size:
                 wbuf_size += num_bytes_encoded
@@ -1065,13 +1058,7 @@ class Reactor:
         del self.__preflight_queue[0:num_messages_launched]
 
         for packet_record in launched_packets:
-            if hasattr(packet_record, 'packetize'):
-                if packet_record.packet_id is None:
-                    packet_id = next(self.__send_path_packet_id_iter)
-                    packet_record._set_packet_id(packet_id)
-                packet = packet_record.packetize(packet_id_iter)
-            else:
-                packet = packet_record
+            packet = packet_record
 
             self.__log.info('Launching message %s.', repr(packet))
 

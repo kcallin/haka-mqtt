@@ -271,6 +271,14 @@ class MqttFixedHeader(object):
         self.flags = flags
         self.remaining_len = remaining_len
 
+        size = 1
+        with BytesIO() as buf:
+            encode_varint(self.remaining_len, buf)
+            size += len(buf.getvalue())
+        size += self.remaining_len
+
+        self.size = size
+
     @staticmethod
     def decode(buf):
         """

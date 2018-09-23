@@ -466,7 +466,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         # Create publish
-        ept = MqttPublishTicket('topic', 'outgoing', 0)
+        ept = MqttPublishTicket(0, 'topic', 'outgoing', 0)
         publish_ticket = self.reactor.publish(ept.topic,
                                               ept.payload,
                                               ept.qos,
@@ -475,7 +475,6 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
-        self.assertIsNone(publish_ticket.packet_id)
 
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
@@ -516,7 +515,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         # Create publish
-        ept = MqttPublishTicket('topic', 'outgoing', 1)
+        ept = MqttPublishTicket(0, 'topic', 'outgoing', 1)
         publish_ticket = self.reactor.publish(ept.topic,
                                               ept.payload,
                                               ept.qos,
@@ -525,7 +524,6 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
-        self.assertIsNone(publish_ticket.packet_id)
 
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
@@ -559,7 +557,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         pt0 = self.start_and_publish_qos1()
 
         # Publish a new message.
-        ept1 = MqttPublishTicket('topic1', 'outgoing1', 1)
+        ept1 = MqttPublishTicket(1, 'topic1', 'outgoing1', 1)
         pt1 = self.reactor.publish(ept1.topic,
                                    ept1.payload,
                                    ept1.qos,
@@ -666,7 +664,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         publish = MqttPublish(0, 'topic', 'outgoing', False, 2, False)
-        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain)
+        pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,
@@ -725,7 +723,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         # C --MqttPublish(packet_id=0, topic='topic', payload=0x6f7574676f696e67, dupe=False, qos=2, retain=False)--> S
         #
         publish1 = MqttPublish(1, 'topic', 'outgoing', False, 2, False)
-        pub_status = MqttPublishTicket(publish1.topic, publish1.payload, publish1.qos, publish1.retain)
+        pub_status = MqttPublishTicket(1, publish1.topic, publish1.payload, publish1.qos, publish1.retain)
         actual_publish = self.reactor.publish(publish1.topic,
                                        publish1.payload,
                                        publish1.qos,
@@ -742,7 +740,6 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
         pub_status._set_status(MqttPublishStatus.pubrec)
-        pub_status._set_packet_id(1)
         self.assertEqual(pub_status, actual_publish)
 
         pubrec0 = MqttPubrec(publish0.packet_id)
@@ -810,7 +807,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.start_to_connack()
 
         publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
-        pub_status = MqttPublishTicket(publish.topic, publish.payload, publish.qos, publish.retain)
+        pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
         se = socket_error(errno.ECONNABORTED)
         self.set_send_side_effect([se])
         self.assertFalse(self.reactor.want_write())

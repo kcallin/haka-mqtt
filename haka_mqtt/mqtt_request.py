@@ -26,17 +26,6 @@ class MqttRequest(object):
         """
         return self.__packet_id
 
-    def _set_packet_id(self, packet_id):
-        """
-
-        Parameters
-        ----------
-        packet_id: int or None
-            0 <= packet_id <= 2**16 -1
-        """
-        assert packet_id is None or 0 <= packet_id <= 2**16-1
-        self.__packet_id = packet_id
-
     @property
     def packet_type(self):
         return self.__packet_type
@@ -51,7 +40,7 @@ class MqttPublishStatus(IntEnum):
 
 
 class MqttPublishTicket(MqttRequest):
-    def __init__(self, topic, payload, qos, retain=False, packet_id=None):
+    def __init__(self, packet_id, topic, payload, qos, retain=False):
         """
 
         Parameters
@@ -116,23 +105,9 @@ class MqttPublishTicket(MqttRequest):
         """
         return self.__status
 
-    def packetize(self, packet_id_iter):
-        """
-
-        Parameters
-        ----------
-        packet_id_iter: iterable of int or None
-
-        Returns
-        -------
-        MqttPublish
-        """
-        if self.packet_id is None:
-            packet_id = next(packet_id_iter)
-        else:
-            packet_id = self.packet_id
-
-        return MqttPublish(packet_id, self.topic, self.payload, self.dupe, self.qos, self.retain)
+    def encode(self, f):
+        p = MqttPublish(self.packet_id, self.topic, self.payload, self.dupe, self.qos, self.retain)
+        return p.encode(f)
 
     def __eq__(self, other):
         return (
@@ -209,23 +184,9 @@ class MqttSubscribeTicket(MqttRequest):
         """
         return self.__status
 
-    def packetize(self, packet_id_iter):
-        """
-
-        Parameters
-        ----------
-        packet_id_iter: iterable of int or None
-
-        Returns
-        -------
-        MqttPublish
-        """
-        if self.packet_id is None:
-            packet_id = next(packet_id_iter)
-        else:
-            packet_id = self.packet_id
-
-        return MqttSubscribe(packet_id, self.topics)
+    def encode(self, f):
+        p = MqttSubscribe(self.packet_id, self.topics)
+        return p.encode(f)
 
 
 class MqttUnsubscribeRequest(MqttRequest):
@@ -265,22 +226,6 @@ class MqttUnsubscribeRequest(MqttRequest):
         """
         return self.__status
 
-    def packetize(self, packet_id_iter):
-        """
-
-        Parameters
-        ----------
-        packet_id_iter: iterable of int or None
-
-        Returns
-        -------
-        MqttPublish
-        """
-        if self.packet_id is None:
-            packet_id = next(packet_id_iter)
-        else:
-            packet_id = self.packet_id
-
-        return MqttUnsubscribe(packet_id, self.topics)
-
-
+    def encode(self, f):
+        p = MqttUnsubscribe(self.packet_id, self.topics)
+        return p.encode(f)

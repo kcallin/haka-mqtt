@@ -1013,6 +1013,9 @@ class Reactor:
         """Takes messages from the preflight_queue and places them in
         the in_flight_queues.
 
+        Simple launch process, but very inefficient!  Recommend
+        improvements based on benchmarks.
+
         Returns
         -------
         int
@@ -1020,6 +1023,7 @@ class Reactor:
         """
 
         # Prepare bytes for launch
+        # TODO: must be larger than largest MQTT packet size
         max_buf_size = 2**16
         wbuf_size = len(self.__wbuf)
 

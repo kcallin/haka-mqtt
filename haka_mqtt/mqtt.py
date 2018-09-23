@@ -180,6 +180,9 @@ def encode_utf8(s, f):
     """UTF-8 encodes string `s` to file-like object `f` according to
     the MQTT Version 3.1.1 specification in section 1.5.3.
 
+    The maximum length for the encoded string is 2**16-1 (65535) bytes.
+    An assertion error will result if the encoded string is longer.
+
     Parameters
     ----------
     s: str

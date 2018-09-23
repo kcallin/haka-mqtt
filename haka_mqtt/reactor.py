@@ -878,6 +878,7 @@ class Reactor:
             if publish and publish.packet_id == puback.packet_id:
                 if publish.qos == 1:
                     del self.__inflight_queue[idx]
+                    self.__send_packet_ids.remove(publish.packet_id)
                     self.__log.info('Received %s.', repr(puback))
                     publish._set_status(MqttPublishStatus.done)
 
@@ -1104,6 +1105,7 @@ class Reactor:
             #     pass
             if packet_record.packet_type is MqttControlPacketType.publish:
                 if packet_record.qos == 0:
+                    self.__send_packet_ids.remove(packet_record.packet_id)
                     packet_record._set_status(MqttPublishStatus.done)
                 elif packet_record.qos == 1:
                     packet_record._set_status(MqttPublishStatus.puback)

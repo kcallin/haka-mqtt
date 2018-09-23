@@ -136,6 +136,18 @@ class TopicSubscription(object):
 
 
 def index(l, predicate):
+    """
+
+    Parameters
+    ----------
+    l: list
+    predicate
+
+    Returns
+    -------
+    int or None
+        Index of first matching predicate or None if no such element found.
+    """
     for idx, e in enumerate(l):
         if predicate(e):
             rv = idx
@@ -400,6 +412,9 @@ class Reactor:
 
         if self.state is ReactorState.error:
             assert self.error is not None
+
+    def active_send_packet_ids(self):
+        return set(self.__send_packet_ids)
 
     def in_flight_packets(self):
         return list(self.__inflight_queue)
@@ -815,17 +830,21 @@ class Reactor:
 
         """
         if self.state is ReactorState.connected:
-            for p in self.__inflight_queue:
-                if p.packet_type == MqttControlPacketType.subscribe and p.packet_id == suback.packet_id:
-                    subscribe = p
-                    break
-            else:
+            idx = index(self.__inflight_queue,
+                        lambda p: p.packet_type == MqttControlPacketType.subscribe and p.packet_id == suback.packet_id)
+            if idx is None:
                 subscribe = None
+            else:
+                subscribe = self.__inflight_queue[idx]
 
             if subscribe:
                 if len(suback.results) == len(subscribe.topics):
                     self.__log.info('Received %s.', repr(suback))
                     subscribe._set_status(MqttSubscribeStatus.done)
+
+                    self.__send_packet_ids.remove(subscribe.packet_id)
+                    del self.__inflight_queue[idx]
+
                     if self.on_suback is not None:
                         self.on_suback(self, suback)
                 else:
@@ -1077,7 +1096,7 @@ class Reactor:
         for packet_record in launched_packets:
             packet = packet_record
 
-            self.__log.info('Launching message %s.', repr(packet))
+            self.__log.info('Launching message %s.', repr(packet.packet()))
 
             # if packet.packet_type is MqttControlPacketType.connect:
             #     pass

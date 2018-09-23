@@ -273,11 +273,13 @@ class TestReactor(unittest.TestCase):
         """
 
         # Push subscribe onto the wire.
+        self.assertEqual(set(), self.reactor.active_send_packet_ids())
         subscribe = MqttSubscribe(0, topics)
         subscribe_ticket = self.reactor.subscribe(subscribe.topics)
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
         self.assertEqual(subscribe_ticket.status, MqttSubscribeStatus.preflight)
+        self.assertEqual({subscribe.packet_id}, self.reactor.active_send_packet_ids())
 
         # Allow reactor to push subscribe onto the wire.
         self.set_send_packet_side_effect(subscribe)
@@ -294,6 +296,7 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(subscribe_ticket.status, MqttSubscribeStatus.done)
         self.on_suback.assert_called_once_with(self.reactor, suback)
         self.on_suback.reset_mock()
+        self.assertEqual(set(), self.reactor.active_send_packet_ids())
 
 
 class TestConnect(TestReactor, unittest.TestCase):

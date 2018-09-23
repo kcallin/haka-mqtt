@@ -105,9 +105,11 @@ class MqttPublishTicket(MqttRequest):
         """
         return self.__status
 
+    def packet(self):
+        return MqttPublish(self.packet_id, self.topic, self.payload, self.dupe, self.qos, self.retain)
+
     def encode(self, f):
-        p = MqttPublish(self.packet_id, self.topic, self.payload, self.dupe, self.qos, self.retain)
-        return p.encode(f)
+        return self.packet().encode(f)
 
     def __eq__(self, other):
         return (
@@ -184,9 +186,11 @@ class MqttSubscribeTicket(MqttRequest):
         """
         return self.__status
 
+    def packet(self):
+        return MqttSubscribe(self.packet_id, self.topics)
+
     def encode(self, f):
-        p = MqttSubscribe(self.packet_id, self.topics)
-        return p.encode(f)
+        return self.packet().encode(f)
 
 
 class MqttUnsubscribeRequest(MqttRequest):

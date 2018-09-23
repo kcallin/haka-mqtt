@@ -338,6 +338,9 @@ class MqttFixedHeader(object):
 
         return num_bytes_consumed
 
+    def packet(self):
+        return self
+
     def __eq__(self, other):
         return (
             hasattr(other, 'packet_type')

@@ -362,6 +362,18 @@ class MqttWill(object):
         msg = 'MqttWill(topic={}, payload=0x{}, retain={}, qos={})'
         return msg.format(self.topic, a2b_hex(self.message), self.retain, self.qos)
 
+    def __eq__(self, other):
+        return (
+                hasattr(other, 'qos')
+                and self.qos == other.qos
+                and hasattr(other, 'topic')
+                and self.topic == other.topic
+                and hasattr(other, 'message')
+                and self.message == other.message
+                and hasattr(other, 'retain')
+                and self.retain == other.retain
+        )
+
 
 class MqttPacketBody(MqttFixedHeader):
     def __init__(self, packet_type, flags):

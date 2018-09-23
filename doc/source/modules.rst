@@ -8,5 +8,6 @@ haka-mqtt
    receive_path
    send_path
    subscribe_path
+   stop
    developer_guide
    release_procedure

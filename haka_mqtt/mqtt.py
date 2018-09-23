@@ -177,6 +177,21 @@ def decode_utf8(buf):
 
 
 def encode_utf8(s, f):
+    """UTF-8 encodes string `s` to file-like object `f` according to
+    the MQTT Version 3.1.1 specification in section 1.5.3.
+
+    Parameters
+    ----------
+    s: str
+        String to be encoded.
+    f: file
+        File-like object.
+
+    Returns
+    -------
+    int
+        Number of bytes written to f.
+    """
     encode = codecs.getencoder('utf8')
 
     encoded_str_bytes, num_encoded_chars = encode(s)
@@ -1025,8 +1040,42 @@ class MqttSuback(MqttPacketBody):
 
 
 class MqttPublish(MqttPacketBody):
+    """Represents a mqtt publish packet.
+
+    Attributes
+    ----------
+    packet_id : int
+        Integer such that 0 <= packet_id <= (2**16)-1.
+    topic : str
+    payload : bytes
+    dupe : bool
+        Represents the DUP flag as described by the MQTT
+        specification:
+
+            If the DUP flag is set to 0, it indicates that this is the
+            first occasion that the Client or Server has attempted to
+            send this MQTT PUBLISH Packet. If the DUP flag is set to 1,
+            it indicates that this might be re-delivery of an earlier
+            attempt to send the Packet.
+
+            The DUP flag MUST be set to 1 by the Client or Server when
+            it attempts to re-deliver a PUBLISH Packet [MQTT-3.3.1-1].
+            The DUP flag MUST be set to 0 for all QoS 0 messages
+            [MQTT-3.3.1-2].
+
+            The value of the DUP flag from an incoming PUBLISH packet is
+            not propagated when the PUBLISH Packet is sent to
+            subscribers by the Server. The DUP flag in the outgoing
+            PUBLISH packet is set independently to the incoming PUBLISH
+            packet, its value MUST be determined solely by whether the
+            outgoing PUBLISH packet is a retransmission [MQTT-3.3.1-3].
+    qos : int
+        Integer such that 0 <= qos <= 2.
+    retain: bool
+    """
+
     def __init__(self, packet_id, topic, payload, dupe, qos, retain):
-        """
+        """Creates a new publish object.
 
         Parameters
         ----------
@@ -1035,6 +1084,26 @@ class MqttPublish(MqttPacketBody):
         topic: str
         payload: bytes
         dupe: bool
+            Represents the DUP flag as described by the MQTT
+            specification:
+
+                If the DUP flag is set to 0, it indicates that this is the
+                first occasion that the Client or Server has attempted to
+                send this MQTT PUBLISH Packet. If the DUP flag is set to 1,
+                it indicates that this might be re-delivery of an earlier
+                attempt to send the Packet.
+
+                The DUP flag MUST be set to 1 by the Client or Server when
+                it attempts to re-deliver a PUBLISH Packet [MQTT-3.3.1-1].
+                The DUP flag MUST be set to 0 for all QoS 0 messages
+                [MQTT-3.3.1-2].
+
+                The value of the DUP flag from an incoming PUBLISH packet is
+                not propagated when the PUBLISH Packet is sent to
+                subscribers by the Server. The DUP flag in the outgoing
+                PUBLISH packet is set independently to the incoming PUBLISH
+                packet, its value MUST be determined solely by whether the
+                outgoing PUBLISH packet is a retransmission [MQTT-3.3.1-3].
         qos: int
             0 <= qos <= 2
         retain: bool

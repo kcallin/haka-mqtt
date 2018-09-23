@@ -74,7 +74,7 @@ class TestCodecVarInt(unittest.TestCase):
         self.assertRaises(mqtt.DecodeError, mqtt.decode_varint, buf)
 
 
-class TestUtf8Decode(unittest.TestCase):
+class TestUtf8Codec(unittest.TestCase):
     def test_decode_encode(self):
         buf = a2b_hex('000541f0aa9b94')
         num_bytes_consumed, s = mqtt.decode_utf8(bytearray(buf))
@@ -85,6 +85,22 @@ class TestUtf8Decode(unittest.TestCase):
         num_bytes_written = mqtt.encode_utf8(s, bio)
         self.assertEqual(bytearray(buf), bytearray(bio.getvalue()))
         self.assertEqual(num_bytes_consumed, num_bytes_written)
+
+    def test_encode_max_len_utf8(self):
+        with BytesIO() as buf:
+            try:
+                mqtt.encode_utf8((2**16 -1) * "a", buf)
+                self.fail("Expected an AssertionError to be raised.")
+            except AssertionError:
+                pass
+
+    def test_encode_too_long_utf8(self):
+        with BytesIO() as buf:
+            try:
+                mqtt.encode_utf8(2**16 * "a", buf)
+                self.fail("Expected an AssertionError to be raised.")
+            except AssertionError:
+                pass
 
 
 class TestConnectCodec(unittest.TestCase):

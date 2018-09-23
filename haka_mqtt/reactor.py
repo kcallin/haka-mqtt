@@ -302,7 +302,7 @@ class Reactor:
         self.__state = ReactorState.init
         self.__error = None
 
-        self.__packet_id_iter = IntegralCycleIter(0, 2**16)
+        self.__send_path_packet_id_iter = IntegralCycleIter(0, 2 ** 16)
 
         self.__preflight_queue = []
         self.__inflight_queue = []
@@ -1034,7 +1034,7 @@ class Reactor:
         packet_end_offsets = [wbuf_size]
         bio = BytesIO()
         num_new_bytes = 0
-        packet_id_iter = copy(self.__packet_id_iter)
+        packet_id_iter = copy(self.__send_path_packet_id_iter)
         for packet_record in self.__preflight_queue:
             if hasattr(packet_record, 'packetize'):
                 packet_record = packet_record.packetize(packet_id_iter)
@@ -1065,7 +1065,7 @@ class Reactor:
         for packet_record in launched_packets:
             if hasattr(packet_record, 'packetize'):
                 if packet_record.packet_id is None:
-                    packet_id = next(self.__packet_id_iter)
+                    packet_id = next(self.__send_path_packet_id_iter)
                     packet_record._set_packet_id(packet_id)
                 packet = packet_record.packetize(packet_id_iter)
             else:

@@ -173,15 +173,16 @@ class MqttSubscribeStatus(IntEnum):
 
 
 class MqttSubscribeTicket(MqttRequest):
-    def __init__(self, topics):
+    def __init__(self, packet_id, topics):
         """
 
         Parameters
         ----------
+        packet_id: int
         topics: iterable of MqttTopic
             Must be one or more topics.
         """
-        super(MqttSubscribeTicket, self).__init__(None, MqttControlPacketType.subscribe)
+        super(MqttSubscribeTicket, self).__init__(packet_id, MqttControlPacketType.subscribe)
 
         self.topics = tuple(topics)
         if isinstance(topics, (str, unicode, bytes)):

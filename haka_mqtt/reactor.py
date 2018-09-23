@@ -411,7 +411,7 @@ class Reactor:
 
         self.__assert_state_rules()
 
-        req = MqttSubscribeTicket(topics)
+        req = MqttSubscribeTicket(self.__acquire_packet_id(), topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
@@ -430,7 +430,7 @@ class Reactor:
 
         Returns
         --------
-        MqttSubscribeTicket
+        MqttUnsubscribeRequest
         """
         assert self.state == ReactorState.connected
 

@@ -306,7 +306,6 @@ class Reactor:
 
         self.__preflight_queue = []
         self.__inflight_queue = []
-        self.__send_queue = []
 
         # Publish packets must be ack'd in order of publishing
         # [MQTT-4.6.0-2], [MQTT-4.6.0-3]

@@ -228,13 +228,14 @@ class MqttSubscribeTicket(MqttRequest):
 
 
 class MqttUnsubscribeRequest(MqttRequest):
-    def __init__(self, topics):
+    def __init__(self, packet_id, topics):
         """
         Parameters
         ----------
+        packet_id: int
         topics: iterable of str
         """
-        super(MqttUnsubscribeRequest, self).__init__(None, MqttControlPacketType.unsubscribe)
+        super(MqttUnsubscribeRequest, self).__init__(packet_id, MqttControlPacketType.unsubscribe)
 
         self.topics = tuple(topics)
 

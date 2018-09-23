@@ -418,6 +418,9 @@ class Reactor:
 
         return req
 
+    def __acquire_packet_id(self):
+        return next(self.__send_path_packet_id_iter)
+
     def unsubscribe(self, topics):
         """
 
@@ -433,7 +436,7 @@ class Reactor:
 
         self.__assert_state_rules()
 
-        req = MqttUnsubscribeRequest(topics)
+        req = MqttUnsubscribeRequest(self.__acquire_packet_id(), topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()

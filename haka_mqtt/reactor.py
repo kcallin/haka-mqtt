@@ -2,7 +2,6 @@ import errno
 import socket
 import logging
 from binascii import b2a_hex
-from copy import copy
 from io import BytesIO
 import os
 
@@ -33,8 +32,13 @@ from haka_mqtt.mqtt import (
     ConnackResult,
     SubscribeResult,
 )
-from haka_mqtt.mqtt_request import MqttSubscribeTicket, MqttUnsubscribeRequest, MqttPublishTicket, MqttPublishStatus, \
-    MqttSubscribeStatus
+from haka_mqtt.mqtt_request import (
+    MqttSubscribeTicket,
+    MqttUnsubscribeRequest,
+    MqttPublishTicket,
+    MqttPublishStatus,
+    MqttSubscribeStatus,
+)
 from haka_mqtt.on_str import HexOnStr, ReprOnStr
 
 
@@ -302,6 +306,7 @@ class Reactor:
         self.__state = ReactorState.init
         self.__error = None
 
+        self.__send_packet_ids = set()
         self.__send_path_packet_id_iter = IntegralCycleIter(0, 2 ** 16)
 
         self.__preflight_queue = []
@@ -396,6 +401,12 @@ class Reactor:
         if self.state is ReactorState.error:
             assert self.error is not None
 
+    def in_flight_packets(self):
+        return list(self.__inflight_queue)
+
+    def preflight_packets(self):
+        return list(self.__preflight_queue)
+
     def subscribe(self, topics):
         """
 
@@ -419,7 +430,9 @@ class Reactor:
         return req
 
     def __acquire_packet_id(self):
-        return next(self.__send_path_packet_id_iter)
+        packet_id = next(self.__send_path_packet_id_iter)
+        self.__send_packet_ids.add(packet_id)
+        return packet_id
 
     def unsubscribe(self, topics):
         """

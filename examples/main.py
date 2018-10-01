@@ -7,7 +7,7 @@ from select import select
 from ssl import wrap_socket
 from time import time
 
-from haka_mqtt.mqtt import MqttTopic
+from mqtt_codec import MqttTopic
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.scheduler import Scheduler

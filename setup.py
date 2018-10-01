@@ -22,6 +22,7 @@ setup(
     version="0.1.0",
     install_requires=[
         'enum34>=1.1.6;python_version<"3.4"',
+        'mqtt-codec~=0.1.0',
     ],
     tests_require = [
         'mock',

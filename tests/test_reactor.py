@@ -16,7 +16,7 @@ from io import BytesIO
 
 from mock import Mock
 
-from haka_mqtt.mqtt import (
+from mqtt_codec import (
     MqttConnack,
     MqttTopic,
     MqttSuback,

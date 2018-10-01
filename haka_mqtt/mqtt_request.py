@@ -1,6 +1,6 @@
 from enum import IntEnum
 
-from haka_mqtt.mqtt import MqttControlPacketType, MqttPublish, MqttSubscribe, MqttUnsubscribe
+from mqtt_codec import MqttControlPacketType, MqttPublish, MqttSubscribe, MqttUnsubscribe
 
 
 class MqttRequest(object):

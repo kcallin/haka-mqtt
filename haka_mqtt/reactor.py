@@ -1,6 +1,7 @@
 import errno
 import socket
 import logging
+import ssl
 from binascii import b2a_hex
 from io import BytesIO
 import os
@@ -12,7 +13,8 @@ from enum import (
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.cycle_iter import IntegralCycleIter
-from haka_mqtt.mqtt import (
+from mqtt_codec import (
+    BytesReader,
     MqttConnect,
     MqttSubscribe,
     MqttFixedHeader,
@@ -303,6 +305,9 @@ class Reactor:
         self.__log = logging.getLogger('haka')
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
+
+        self.__ssl_want_read = False
+        self.__ssl_want_write = False
 
         self.__client_id = properties.client_id
         self.__clock = properties.clock
@@ -641,11 +646,11 @@ class Reactor:
             if self.state is ReactorState.connecting:
                 rv = True
             elif self.state is ReactorState.connack:
-                rv = bool(self.__wbuf)
+                rv = bool(self.__wbuf) or self.__ssl_want_write
             elif bool(self.__wbuf) or bool(self.__preflight_queue):
                 rv = True
             else:
-                rv = False
+                rv = False or self.__ssl_want_write
         else:
             rv = False
 
@@ -654,8 +659,8 @@ class Reactor:
     def __decode_packet_body(self, header, num_header_bytes, packet_class):
         num_packet_bytes = num_header_bytes + header.remaining_len
 
-        body = self.__rbuf[num_header_bytes:]
-        num_body_bytes_consumed, packet = packet_class.decode_body(header, body)
+        body = self.__rbuf[num_header_bytes:num_packet_bytes]
+        num_body_bytes_consumed, packet = packet_class.decode_body(header, BytesReader(body))
         assert num_packet_bytes == num_header_bytes + num_body_bytes_consumed
         self.__rbuf = bytearray(self.__rbuf[num_packet_bytes:])
         return packet
@@ -676,7 +681,7 @@ class Reactor:
         self.__rbuf.extend(new_bytes)
 
         while True:
-            num_header_bytes, header = MqttFixedHeader.decode(self.__rbuf)
+            num_header_bytes, header = MqttFixedHeader.decode(BytesReader(bytes(self.__rbuf)))
             num_packet_bytes = num_header_bytes + header.remaining_len
             if len(self.__rbuf) >= num_packet_bytes:
                 if header.packet_type == MqttControlPacketType.connack:
@@ -715,6 +720,9 @@ class Reactor:
         """
         self.__assert_state_rules()
 
+        self.__ssl_want_write = False
+        self.__ssl_want_read = False
+
         num_bytes_read = 0
         if self.state not in INACTIVE_STATES:
             try:
@@ -731,6 +739,10 @@ class Reactor:
             except DecodeError as e:
                 self.__log.error('Error decoding message (%s)', str(e))
                 self.__abort(DecodeReactorError(str(e)))
+            except ssl.SSLWantWriteError:
+                self.__ssl_want_write = True
+            except ssl.SSLWantReadError:
+                self.__ssl_want_read = True
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
@@ -1199,10 +1211,17 @@ class Reactor:
             Number of bytes written.
         """
 
+        self.__ssl_want_read = False
+        self.__ssl_want_write = False
+
         num_bytes_written = 0
         if self.__wbuf:
             try:
                 num_bytes_written = self.socket.send(self.__wbuf)
+            except ssl.SSLWantReadError:
+                self.__ssl_want_read = True
+            except ssl.SSLWantWriteError:
+                self.__ssl_want_write = True
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.

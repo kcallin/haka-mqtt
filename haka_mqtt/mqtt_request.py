@@ -1,17 +1,18 @@
 from enum import IntEnum
 
-from mqtt_codec import MqttControlPacketType, MqttPublish, MqttSubscribe, MqttUnsubscribe
+from mqtt_codec.packet import MqttControlPacketType, MqttSubscribe, MqttPublish, MqttUnsubscribe
 
 
 class MqttRequest(object):
-    def __init__(self, packet_id, packet_type):
-        """
+    """
 
-        Parameters
-        ----------
-        packet_id: int
-        packet_type: MqttControlPacketType
-        """
+    Parameters
+    ----------
+    packet_id: int
+    packet_type: MqttControlPacketType
+    """
+
+    def __init__(self, packet_id, packet_type):
         self.__packet_id = packet_id
         self.__packet_type = packet_type
 
@@ -28,6 +29,12 @@ class MqttRequest(object):
 
     @property
     def packet_type(self):
+        """
+
+        Returns
+        -------
+        MqttControlPacketType
+        """
         return self.__packet_type
 
 
@@ -40,17 +47,18 @@ class MqttPublishStatus(IntEnum):
 
 
 class MqttPublishTicket(MqttRequest):
-    def __init__(self, packet_id, topic, payload, qos, retain=False):
-        """
+    """
 
-        Parameters
-        ----------
-        topic: str
-        payload: bytes
-        qos: int
-            0 <= qos <= 2
-        retain: bool
-        """
+    Parameters
+    ----------
+    topic: str
+    payload: bytes
+    qos: int
+        0 <= qos <= 2
+    retain: bool
+    """
+
+    def __init__(self, packet_id, topic, payload, qos, retain=False):
         super(MqttPublishTicket, self).__init__(packet_id, MqttControlPacketType.publish)
 
         assert 0 <= qos <= 2
@@ -71,6 +79,12 @@ class MqttPublishTicket(MqttRequest):
 
     @property
     def dupe(self):
+        """
+
+        Returns
+        -------
+        bool
+        """
         return self.__dupe
 
     def _set_dupe(self):
@@ -150,15 +164,16 @@ class MqttSubscribeStatus(IntEnum):
 
 
 class MqttSubscribeTicket(MqttRequest):
-    def __init__(self, packet_id, topics):
-        """
+    """
 
-        Parameters
-        ----------
-        packet_id: int
-        topics: iterable of MqttTopic
-            Must be one or more topics.
-        """
+    Parameters
+    ----------
+    packet_id: int
+    topics: iterable of MqttTopic
+        Must be one or more topics.
+    """
+
+    def __init__(self, packet_id, topics):
         super(MqttSubscribeTicket, self).__init__(packet_id, MqttControlPacketType.subscribe)
 
         self.topics = tuple(topics)
@@ -194,13 +209,14 @@ class MqttSubscribeTicket(MqttRequest):
 
 
 class MqttUnsubscribeRequest(MqttRequest):
+    """
+    Parameters
+    ----------
+    packet_id: int
+    topics: iterable of str
+    """
+
     def __init__(self, packet_id, topics):
-        """
-        Parameters
-        ----------
-        packet_id: int
-        topics: iterable of str
-        """
         super(MqttUnsubscribeRequest, self).__init__(packet_id, MqttControlPacketType.unsubscribe)
 
         self.topics = tuple(topics)

@@ -13,27 +13,29 @@ from enum import (
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.cycle_iter import IntegralCycleIter
-from mqtt_codec import (
-    BytesReader,
-    MqttConnect,
-    MqttSubscribe,
-    MqttFixedHeader,
-    MqttControlPacketType,
-    MqttConnack,
-    MqttSuback,
+from mqtt_codec.io import (
     UnderflowDecodeError,
     DecodeError,
+)
+from mqtt_codec.packet import (
+    MqttControlPacketType,
+    MqttFixedHeader,
+    MqttConnect,
+    ConnackResult,
+    MqttConnack,
+    MqttSubscribe,
+    SubscribeResult,
+    MqttSuback,
     MqttPublish,
     MqttPuback,
-    MqttDisconnect,
-    MqttPingreq,
-    MqttPingresp,
     MqttPubrec,
     MqttPubrel,
     MqttPubcomp,
-    ConnackResult,
-    SubscribeResult,
+    MqttPingreq,
+    MqttPingresp,
+    MqttDisconnect
 )
+from mqtt_codec.io import BytesReader
 from haka_mqtt.mqtt_request import (
     MqttSubscribeTicket,
     MqttUnsubscribeRequest,

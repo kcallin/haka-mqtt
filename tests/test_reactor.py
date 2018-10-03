@@ -16,20 +16,20 @@ from io import BytesIO
 
 from mock import Mock
 
-from mqtt_codec import (
+from mqtt_codec.packet import (
+    MqttConnect,
+    ConnackResult,
     MqttConnack,
     MqttTopic,
-    MqttSuback,
-    SubscribeResult,
-    MqttConnect,
     MqttSubscribe,
+    SubscribeResult,
+    MqttSuback,
     MqttPublish,
     MqttPuback,
-    MqttPingreq,
     MqttPubrec,
     MqttPubrel,
     MqttPubcomp,
-    ConnackResult
+    MqttPingreq,
 )
 from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus
 from haka_mqtt.reactor import (

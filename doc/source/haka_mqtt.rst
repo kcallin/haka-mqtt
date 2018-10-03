@@ -1,21 +1,11 @@
-haka\_mqtt package
-==================
-
-Submodules
-----------
+==========================
+API Reference
+==========================
 
 haka\_mqtt.clock module
 -----------------------
 
 .. automodule:: haka_mqtt.clock
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-haka\_mqtt.mqtt module
-----------------------
-
-.. automodule:: haka_mqtt.mqtt
     :members:
     :undoc-members:
     :show-inheritance:
@@ -40,15 +30,6 @@ haka\_mqtt.scheduler module
 ---------------------------
 
 .. automodule:: haka_mqtt.scheduler
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-
-Module contents
----------------
-
-.. automodule:: haka_mqtt
     :members:
     :undoc-members:
     :show-inheritance:

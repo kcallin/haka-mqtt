@@ -16,6 +16,7 @@ from haka_mqtt.cycle_iter import IntegralCycleIter
 from mqtt_codec.io import (
     UnderflowDecodeError,
     DecodeError,
+    BytesReader,
 )
 from mqtt_codec.packet import (
     MqttControlPacketType,
@@ -35,7 +36,6 @@ from mqtt_codec.packet import (
     MqttPingresp,
     MqttDisconnect
 )
-from mqtt_codec.io import BytesReader
 from haka_mqtt.mqtt_request import (
     MqttSubscribeTicket,
     MqttUnsubscribeRequest,

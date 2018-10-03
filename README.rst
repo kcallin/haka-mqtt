@@ -28,6 +28,7 @@ Project Infrastructure
 The project is coordinated through public infrastructure available at
 several places:
 
-* `Bug Tracker <https://github.com/kcallin/haka-mqtt/issues>`_
+* `Releases <https://pypi.org/project/haka-mqtt>`_
 * `Documentation <https://haka-mqtt.readthedocs.io/en/latest/>`_
-* `Source Code <https://github.com/kcallin/haka-mqtt>`_
+* `Bug Tracker <https://github.com/kcallin/haka-mqtt/issues>`_
+* `Code Repository <https://github.com/kcallin/haka-mqtt>`_

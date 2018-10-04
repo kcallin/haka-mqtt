@@ -97,11 +97,12 @@ class ReactorState(IntEnum):
     """
     init = 0
     connecting = 1
-    connack = 2
-    connected = 3
-    stopping = 4
-    stopped = 5
-    error = 6
+    handshake = 2
+    connack = 3
+    connected = 4
+    stopping = 5
+    stopped = 6
+    error = 7
 
 
 # States where there are no active deadlines, the socket is closed and there
@@ -111,7 +112,13 @@ INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 
 # States with active deadlines, open sockets, or pending I/O.
 #
-ACTIVE_STATES = (ReactorState.connecting, ReactorState.connack, ReactorState.connected, ReactorState.stopping)
+ACTIVE_STATES = (
+    ReactorState.connecting,
+    ReactorState.handshake,
+    ReactorState.connack,
+    ReactorState.connected,
+    ReactorState.stopping
+)
 
 
 assert set(INACTIVE_STATES).union(ACTIVE_STATES) == set(iter(ReactorState))
@@ -727,30 +734,33 @@ class Reactor:
 
         num_bytes_read = 0
         if self.state not in INACTIVE_STATES:
-            try:
-                new_bytes = self.socket.recv(4096)
-                num_bytes_read = len(new_bytes)
-                if new_bytes:
-                    self.__on_recv_bytes(new_bytes)
-                else:
-                    self.__on_muted_remote()
+            if self.state is ReactorState.handshake:
+                self.__set_handshake()
+            else:
+                try:
+                    new_bytes = self.socket.recv(4096)
+                    num_bytes_read = len(new_bytes)
+                    if new_bytes:
+                        self.__on_recv_bytes(new_bytes)
+                    else:
+                        self.__on_muted_remote()
 
-            except UnderflowDecodeError:
-                # Not enough header bytes.
-                pass
-            except DecodeError as e:
-                self.__log.error('Error decoding message (%s)', str(e))
-                self.__abort(DecodeReactorError(str(e)))
-            except ssl.SSLWantWriteError:
-                self.__ssl_want_write = True
-            except ssl.SSLWantReadError:
-                self.__ssl_want_read = True
-            except socket.error as e:
-                if e.errno == errno.EWOULDBLOCK:
-                    # No write space ready.
+                except UnderflowDecodeError:
+                    # Not enough header bytes.
                     pass
-                else:
-                    self.__abort_socket_error(SocketError(e.errno))
+                except DecodeError as e:
+                    self.__log.error('Error decoding message (%s)', str(e))
+                    self.__abort(DecodeReactorError(str(e)))
+                except ssl.SSLWantWriteError:
+                    self.__ssl_want_write = True
+                except ssl.SSLWantReadError:
+                    self.__ssl_want_read = True
+                except socket.error as e:
+                    if e.errno == errno.EWOULDBLOCK:
+                        # No write space ready.
+                        pass
+                    else:
+                        self.__abort_socket_error(SocketError(e.errno))
 
         self.__assert_state_rules()
         return num_bytes_read
@@ -1184,13 +1194,10 @@ class Reactor:
 
         return num_bytes_flushed
 
-    def __on_connect(self):
-        assert self.state == ReactorState.connecting
-        self.__log.info('Connected.')
-        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
-        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
-                                                               self.__keepalive_abort_timeout)
+    def __on_handshake(self):
+        pass
 
+    def __set_connack(self):
         self.__state = ReactorState.connack
 
         assert not self.__wbuf
@@ -1203,6 +1210,31 @@ class Reactor:
 
         num_bytes_flushed = self.__flush()
         self.__wbuf = self.__wbuf[num_bytes_flushed:]
+
+    def __set_handshake(self):
+        self.__state = ReactorState.handshake
+        self.__ssl_want_read = False
+        self.__ssl_want_write = False
+
+        try:
+            self.socket.do_handshake()
+            self.__set_connack()
+        except ssl.SSLWantReadError:
+            self.__ssl_want_read = True
+        except ssl.SSLWantWriteError:
+            self.__ssl_want_write = True
+
+    def __on_connect(self):
+        assert self.state == ReactorState.connecting
+        self.__log.info('Connected.')
+        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
+                                                               self.__keepalive_abort_timeout)
+
+        if hasattr(self.socket, 'do_handshake'):
+            self.__set_handshake()
+        else:
+            self.__set_connack()
 
     def __flush(self):
         """Calls send exactly once; returning the number of bytes written.
@@ -1350,6 +1382,8 @@ class Reactor:
                     pass
                 else:
                     self.__abort_socket_error(SocketError(e.errno))
+            elif self.state is ReactorState.handshake:
+                self.__set_handshake()
             elif self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
                 self.__launch_next_queued_packet()
             else:

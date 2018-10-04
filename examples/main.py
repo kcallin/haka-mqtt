@@ -7,7 +7,7 @@ from select import select
 from ssl import wrap_socket
 from time import time
 
-from mqtt_codec import MqttTopic
+from mqtt_codec.packet import MqttTopic, MqttControlPacketType
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.scheduler import Scheduler
@@ -16,69 +16,103 @@ TOPIC = 'bubbles'
 count = 0
 
 
-def on_disconnect(reactor):
-    pass
+class MqttClient():
+    def __init__(self, properties):
+        """
 
+        Parameters
+        ----------
+        properties: ReactorProperties
+        """
+        reactor = Reactor(properties)
+        reactor.on_suback = self.__on_suback
+        reactor.on_puback = self.__on_puback
+        reactor.on_connack = self.__on_connack
+        reactor.on_publish = self.__on_publish
+        reactor.on_disconnect = self.__on_disconnect
+        reactor.on_connect_fail = self.__on_connect_fail
+        self.__reactor = reactor
+        self.__publish_queue = []
+        self.__puback_queue = []
+        self.__running = False
 
-def on_connack(reactor, p):
-    """
+    def is_running(self):
+        return self.__running
 
-    Parameters
-    ----------
-    reactor: Reactor
-    p: MqttConnack
-    """
-    reactor.subscribe([
-        MqttTopic(TOPIC, 1),
-    ])
+    def __on_disconnect(self, reactor):
+        print('disconnect', repr(reactor.error))
 
+    def __on_connect_fail(self, reactor):
+        print('connect_fail', repr(reactor.error))
 
-def on_suback(reactor, p):
-    """
+    def __on_suback(self, reactor, p):
+        """
 
-    Parameters
-    ----------
-    reactor: Reactor
-    p: MqttSuback
-    """
-    global count
+        Parameters
+        ----------
+        reactor: Reactor
+        p: MqttSuback
+        """
 
-    count += 1
-    reactor.publish(TOPIC, str(count), 1)
+        publish = self.__reactor.publish(TOPIC, str(count), 1)
+        self.__publish_queue.append(publish)
 
+    def __on_puback(self, reactor, p):
+        """
 
-def on_puback(reactor, p):
-    """
+        Parameters
+        ----------
+        reactor: Reactor
+        p: mqtt_codec.packet.MqttPuback
+        """
 
-    Parameters
-    ----------
-    reactor: Reactor
-    p: MqttPuback
-    """
-    global count
-    global limit
+        assert p.packet_type is MqttControlPacketType.puback
+        assert p.packet_id == self.__publish_queue[-1].packet_id
 
+        publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
+        self.__publish_queue.append(publish)
 
-    if count == 50:
-        reactor.terminate()
-        reactor.start()
-        count += 1
-    elif count < 100:
-        count += 1
-        reactor.publish(TOPIC, str(count), 1)
-    else:
-        reactor.stop()
+    def __on_connack(self, reactor, p):
+        """
 
+        Parameters
+        ----------
+        reactor: Reactor
+        p: MqttConnack
+        """
+        self.__reactor.subscribe([
+            MqttTopic(TOPIC, 1),
+        ])
 
-def on_publish(reactor, p):
-    """
+    def __on_publish(self, reactor, p):
+        """
 
-    Parameters
-    ----------
-    reactor: Reactor
-    p: MqttPuback
-    """
-    pass
+        Parameters
+        ----------
+        reactor: Reactor
+        p: MqttPuback
+        """
+        pass
+
+    @property
+    def socket(self):
+        return self.__reactor.socket
+
+    def want_read(self):
+        return self.__reactor.want_read()
+
+    def read(self):
+        return self.__reactor.read()
+
+    def want_write(self):
+        return self.__reactor.want_write()
+
+    def write(self):
+        return self.__reactor.write()
+
+    def start(self):
+        self.__reactor.start()
+        self.__running = True
 
 
 def create_socket():
@@ -92,9 +126,10 @@ def ssl_create_socket():
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock = ctx.wrap_socket(sock)
     sock.setblocking(0)
 
-    return ctx.wrap_socket(sock)
+    return sock
 
 
 def argparse_endpoint(s):
@@ -140,7 +175,6 @@ def create_parser():
 def main(args=sys.argv[1:]):
     logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 
-
     #
     # 1883 : MQTT, unencrypted
     # 8883 : MQTT, encrypted
@@ -158,6 +192,7 @@ def main(args=sys.argv[1:]):
     clock = SystemClock()
 
     scheduler = Scheduler()
+
     p = ReactorProperties()
     p.socket_factory = ssl_create_socket
     p.endpoint = endpoint
@@ -166,18 +201,14 @@ def main(args=sys.argv[1:]):
     p.client_id = 'bobby'
     p.scheduler = scheduler
 
-    reactor = Reactor(p)
-    reactor.on_suback = on_suback
-    reactor.on_puback = on_puback
-    reactor.on_connack = on_connack
-    reactor.on_publish = on_publish
-    reactor.start()
+    client = MqttClient(p)
+    client.start()
 
     log = logging.getLogger()
 
     last_poll_time = time()
     select_timeout = scheduler.remaining()
-    while reactor.state not in (ReactorState.stopped, ReactorState.error):
+    while client.is_running():
         #
         #                                 |---------poll_period-------------|------|
         #                                 |--poll--|-----select_period------|
@@ -185,25 +216,32 @@ def main(args=sys.argv[1:]):
         #  ... ----|--------|-------------|--------|---------|--------------|------|---- ...
         #            select   handle i/o     poll     select    handle i/o    poll
         #
-        if reactor.want_read():
-            rlist = [reactor.socket]
+        if client.want_read():
+            rlist = [client.socket]
         else:
             rlist = []
 
-        if reactor.want_write():
-            wlist = [reactor.socket]
+        if client.want_write():
+            wlist = [client.socket]
         else:
             wlist = []
 
+        if select_timeout is None:
+            log.debug('Enter select None')
+        else:
+            log.debug('Enter select %f', select_timeout)
         rlist, wlist, xlist = select(rlist, wlist, [], select_timeout)
+        log.debug('Exit select')
 
         for r in rlist:
-            assert r == reactor.socket
-            reactor.read()
+            assert r == client.socket
+            log.debug('Calling read')
+            client.read()
 
         for w in wlist:
-            assert w == reactor.socket
-            reactor.write()
+            assert w == client.socket
+            log.debug('Calling write')
+            client.write()
 
         poll_time = time()
         time_since_last_poll = poll_time - last_poll_time
@@ -211,9 +249,6 @@ def main(args=sys.argv[1:]):
             deadline_miss_duration = time_since_last_poll - scheduler.remaining()
             if deadline_miss_duration > 0:
                 log.debug("Missed poll deadline by %fs.", deadline_miss_duration)
-
-        if reactor.state in INACTIVE_STATES:
-            reactor.start()
 
         scheduler.poll(time_since_last_poll)
         last_poll_time = poll_time

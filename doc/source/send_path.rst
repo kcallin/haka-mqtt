@@ -36,9 +36,14 @@ QoS 1
       C -> H [label="publish call"];
            H -> Q [label = "Publish"];
       C <- H [label="publish return"];
+      C -> H [label="read/write call"];
+           Q -> S [diagonal, label="Publish"];
+      C <- H [label="read/write return"];
+      C -> H [label="read call"];
            H <- S [diagonal, label = "Puback"];
       C <- H [label="on_puback call"];
       C -> H [label="on_puback return"];
+      C <- H [label="read return"];
 
       C [description="Client"];
       H [description="haka-mqtt"];

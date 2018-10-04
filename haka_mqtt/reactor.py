@@ -90,6 +90,7 @@ class ReactorState(IntEnum):
     Inactive States:
 
     * :py:const:`ReactorState.connecting`
+    * :py:const:`ReactorState.handshake`
     * :py:const:`ReactorState.connack`
     * :py:const:`ReactorState.connected`
     * :py:const:`ReactorState.stopping`
@@ -124,41 +125,22 @@ ACTIVE_STATES = (
 assert set(INACTIVE_STATES).union(ACTIVE_STATES) == set(iter(ReactorState))
 
 
-class TopicSubscription(object):
-    def __init__(self, topic, ask_max_qos):
-        self.__topic = topic
-        self.__ask_max_qos = ask_max_qos
-        self.__granted_max_qos = None
-
-    @property
-    def topic(self):
-        return self.__topic
-
-    @property
-    def ask_max_qos(self):
-        return self.__ask_max_qos
-
-    @property
-    def granted_max_qos(self):
-        return self.__granted_max_qos
-
-    def _set_granted_max_qos(self, qos):
-        self.__granted_max_qos = qos
-
-
 def index(l, predicate):
     """
 
     Parameters
     ----------
     l: list
-    predicate
+    predicate: callable
+        Callable function taking a single parameter.
 
     Returns
     -------
     int or None
         Index of first matching predicate or None if no such element found.
     """
+    assert callable(predicate), repr(predicate)
+
     for idx, e in enumerate(l):
         if predicate(e):
             rv = idx
@@ -200,16 +182,15 @@ class KeepaliveTimeoutReactorError(ReactorError):
 
 class SocketError(ReactorError):
     """
+    Parameters
+    ----------
+    errno_val: int
+
     Attributes
     ----------
     errno: int
     """
     def __init__(self, errno_val):
-        """
-        Parameters
-        ----------
-        errno_val: int
-        """
         assert errno_val in errno.errorcode
 
         self.errno = errno_val
@@ -222,34 +203,25 @@ class SocketError(ReactorError):
 
 
 class AddressingReactorError(ReactorError):
+    """
+    Parameters
+    ----------
+    gaierror: socket.gaierror
+    """
+
     def __init__(self, gaierror):
-        """
-        Parameters
-        ----------
-        gaierror: socket.gaierror
-        """
         assert isinstance(gaierror, socket.gaierror)
         self.__errno = gaierror.errno
         self.__desc = gaierror.strerror
 
     @property
     def errno(self):
-        """
-
-        Returns
-        -------
-        int
-        """
+        """int: Address error number."""
         return self.__errno
 
     @property
     def description(self):
-        """
-
-        Returns
-        -------
-        str
-        """
+        """str: Error description."""
         return self.__desc
 
     def __repr__(self):
@@ -285,6 +257,10 @@ FREE_LAUNCH_PACKET_TYPES = {
 
 class Reactor:
     """
+    Parameters
+    ----------
+    properties: ReactorProperties
+
     standard_preflight_queue
     prompt_preflight_queue
     flight_queue
@@ -292,17 +268,9 @@ class Reactor:
        ---pub(1) ---->
        <--pubrec(1)---
 
-
     send_queue
     """
     def __init__(self, properties):
-        """
-
-        Parameters
-        ----------
-        properties: ReactorProperties
-        """
-
         assert properties.client_id is not None
         assert properties.socket_factory is not None
         assert properties.endpoint is not None
@@ -373,10 +341,12 @@ class Reactor:
 
     @property
     def clean_session(self):
+        """bool: Clean session flag is true/false."""
         return self.__clean_session
 
     @property
     def client_id(self):
+        """str: Client id."""
         return self.__client_id
 
     @property
@@ -385,38 +355,28 @@ class Reactor:
 
     @property
     def keepalive_period(self):
-        """If this period elapses without the client sending a control
-        packet to the server then it will generate a pingreq packet and
-        send it to the server."""
+        """float: If this period elapses without the client sending a
+        control packet to the server then it will generate a pingreq
+        packet and send it to the server."""
         return self.__keepalive_period
 
     @property
     def keepalive_timeout_period(self):
-        """If the Keep Alive value is non-zero and the Server does not
-        receive a Control Packet from the Client within one and a half
-        times the Keep Alive time period, it MUST disconnect the
+        """float: If the Keep Alive value is non-zero and the Server
+        does not receive a Control Packet from the Client within one and
+        a half times the Keep Alive time period, it MUST disconnect the
         Network Connection to the Client as if the network had failed.
         [MQTT-3.1.2-24]"""
         return int(self.keepalive_period * 1.5)
 
     @property
     def error(self):
-        """
-
-        Returns
-        -------
-        ReactorError or None
-        """
+        """ReactorError or None"""
         return self.__error
 
     @property
     def state(self):
-        """
-
-        Returns
-        -------
-        ReactorState
-        """
+        """ReactorState: Current reactor state."""
         return self.__state
 
     def __assert_state_rules(self):

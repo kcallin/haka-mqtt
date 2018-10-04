@@ -509,7 +509,10 @@ class Reactor:
 
         self.__state = ReactorState.connecting
         try:
+            self.__log.info('Enter connect')
+            # TODO: Asynchronous DNS lookup.
             self.socket.connect(self.endpoint)
+            self.__log.info('Exit connect')
             self.__on_connect()
         except socket.gaierror as e:
             self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)

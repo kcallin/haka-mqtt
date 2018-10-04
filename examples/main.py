@@ -197,7 +197,7 @@ def main(args=sys.argv[1:]):
     p.socket_factory = ssl_create_socket
     p.endpoint = endpoint
     p.clock = clock
-    p.keepalive_period = 20
+    p.keepalive_period = 60
     p.client_id = 'bobby'
     p.scheduler = scheduler
 

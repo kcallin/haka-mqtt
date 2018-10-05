@@ -4,10 +4,9 @@ import ssl
 import sys
 import socket
 from select import select
-from ssl import wrap_socket
 from time import time
 
-from haka_mqtt.dns import SynchronousDnsResolver
+from haka_mqtt.dns import SynchronousDnsResolver, AsyncDnsResolver
 from mqtt_codec.packet import MqttTopic, MqttControlPacketType
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
 from haka_mqtt.clock import SystemClock
@@ -25,6 +24,7 @@ class MqttClient():
         ----------
         properties: ReactorProperties
         """
+        self.__scheduler = properties.scheduler
         reactor = Reactor(properties)
         reactor.on_suback = self.__on_suback
         reactor.on_puback = self.__on_puback
@@ -36,6 +36,8 @@ class MqttClient():
         self.__publish_queue = []
         self.__puback_queue = []
         self.__running = False
+
+        self.__pub_deadline = None
 
     def is_running(self):
         return self.__running
@@ -70,8 +72,17 @@ class MqttClient():
         assert p.packet_type is MqttControlPacketType.puback
         assert p.packet_id == self.__publish_queue[-1].packet_id
 
+        if len(self.__publish_queue) % 2 == 0:
+            publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
+            self.__publish_queue.append(publish)
+        else:
+            self.__pub_deadline = self.__scheduler.add(30., self.__on_pub_timeout)
+
+    def __on_pub_timeout(self):
         publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
         self.__publish_queue.append(publish)
+        self.__pub_deadline.cancel()
+        self.__pub_deadline = None
 
     def __on_connack(self, reactor, p):
         """
@@ -174,7 +185,7 @@ def create_parser():
 
 
 def main(args=sys.argv[1:]):
-    logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+    logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
 
     #
     # 1883 : MQTT, unencrypted
@@ -194,14 +205,17 @@ def main(args=sys.argv[1:]):
 
     scheduler = Scheduler()
 
+    async_name_resolver = AsyncDnsResolver()
+
     p = ReactorProperties()
     p.socket_factory = ssl_create_socket
     p.endpoint = endpoint
     p.clock = clock
-    p.keepalive_period = 60
+    p.keepalive_period = 10
     p.client_id = 'bobby'
     p.scheduler = scheduler
     p.name_resolver = SynchronousDnsResolver()
+    p.name_resolver = async_name_resolver
 
     client = MqttClient(p)
     client.start()
@@ -218,10 +232,9 @@ def main(args=sys.argv[1:]):
         #  ... ----|--------|-------------|--------|---------|--------------|------|---- ...
         #            select   handle i/o     poll     select    handle i/o    poll
         #
+        rlist = [async_name_resolver.read_fd()]
         if client.want_read():
-            rlist = [client.socket]
-        else:
-            rlist = []
+            rlist.append(client.socket)
 
         if client.want_write():
             wlist = [client.socket]
@@ -229,20 +242,25 @@ def main(args=sys.argv[1:]):
             wlist = []
 
         if select_timeout is None:
-            log.debug('Enter select None')
+            pass
+            #log.debug('Enter select None')
         else:
-            log.debug('Enter select %f', select_timeout)
+            pass
+            #log.debug('Enter select %f', select_timeout)
         rlist, wlist, xlist = select(rlist, wlist, [], select_timeout)
-        log.debug('Exit select')
+        #log.debug('Exit select')
 
         for r in rlist:
-            assert r == client.socket
-            log.debug('Calling read')
-            client.read()
+            if r == client.socket:
+                client.read()
+            elif r == async_name_resolver.read_fd():
+                async_name_resolver.poll()
+            else:
+                raise NotImplementedError()
 
         for w in wlist:
             assert w == client.socket
-            log.debug('Calling write')
+            #log.debug('Calling write')
             client.write()
 
         poll_time = time()
@@ -260,7 +278,9 @@ def main(args=sys.argv[1:]):
             last_poll_duration = time() - last_poll_time
             select_timeout -= last_poll_duration
 
-        if select_timeout < 0:
+        assert None < 0
+
+        if select_timeout is not None and select_timeout < 0:
             select_timeout = 0
 
     #print(repr(reactor.error))

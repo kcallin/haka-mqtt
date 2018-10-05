@@ -77,8 +77,8 @@ class Scheduler(object):
 
         while self.__queue and self.__queue[0].instant <= self.instant():
             de = self.__queue.pop(0)
-            de.cb()
             de.expired = True
+            de.cb()
 
     def __len__(self):
         return len(self.__queue)

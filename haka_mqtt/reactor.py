@@ -506,7 +506,8 @@ class Reactor:
         for p in self.__preflight_queue:
             if p.packet_type in (MqttControlPacketType.publish, MqttControlPacketType.pubrel):
                 preflight_queue.append(p)
-        
+
+        self.socket = None
         self.__inflight_queue = []
         self.__preflight_queue = preflight_queue
 
@@ -627,7 +628,7 @@ class Reactor:
         bool
         """
         if self.state in ACTIVE_STATES:
-            if self.state is ReactorState.connecting:
+            if self.state in (ReactorState.connecting, ReactorState.name_resolution):
                 rv = False
             else:
                 rv = True
@@ -649,6 +650,8 @@ class Reactor:
                 rv = True
             elif self.state is ReactorState.connack:
                 rv = bool(self.__wbuf) or self.__ssl_want_write
+            elif self.state is ReactorState.name_resolution:
+                rv = False
             elif bool(self.__wbuf) or bool(self.__preflight_queue):
                 rv = True
             else:

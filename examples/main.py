@@ -7,6 +7,7 @@ from select import select
 from ssl import wrap_socket
 from time import time
 
+from haka_mqtt.dns import SynchronousDnsResolver
 from mqtt_codec.packet import MqttTopic, MqttControlPacketType
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
 from haka_mqtt.clock import SystemClock
@@ -200,6 +201,7 @@ def main(args=sys.argv[1:]):
     p.keepalive_period = 60
     p.client_id = 'bobby'
     p.scheduler = scheduler
+    p.name_resolver = SynchronousDnsResolver()
 
     client = MqttClient(p)
     client.start()

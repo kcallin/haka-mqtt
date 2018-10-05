@@ -70,6 +70,7 @@ class TestReactor(unittest.TestCase):
         p.keepalive_period = self.keepalive_period
         p.scheduler = self.scheduler
         p.clean_session = True
+        p.name_resolver = self.name_resolver
 
         return p
 
@@ -95,11 +96,34 @@ class TestReactor(unittest.TestCase):
         for log in self.logs:
             log.removeHandler(self.handler)
 
+    def af_inet_name_resolution(self):
+        """
+        ********************
+        family AF_INET
+        socktype 1
+        proto 6
+        canonname
+        sockaddr ('93.184.216.34', 80)
+
+        ********************
+        family AF_INET6
+        socktype 1
+        proto 6
+        canonname
+        sockaddr ('2606:2800:220:1:248:1893:25c8:1946', 80, 0, 0)
+        """
+        return socket.AF_INET, 1, 6, '', ('93.184.216.34', 80)
+
+    def af_inet6_name_resolution(self):
+        return socket.AF_INET6, 1, 6, '', ('2606:2800:220:1:248:1893:25c8:1946', 80, 0, 0)
+
     def setUp(self):
         self.setup_logging()
 
         self.socket = Mock()
         self.endpoint = ('test.mosquitto.org', 1883)
+        self.name_resolver = Mock()
+        self.name_resolver.return_value = [self.af_inet_name_resolution()]
         self.client_id = 'client'
         self.keepalive_period = 10*60
         self.scheduler = Scheduler()
@@ -221,7 +245,9 @@ class TestReactor(unittest.TestCase):
 
         self.reactor.start()
 
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.name_resolver.assert_called_once()
+        self.name_resolver.reset_mock()
+        self.socket.connect.assert_called_once_with(self.af_inet_name_resolution()[4])
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
@@ -240,7 +266,7 @@ class TestReactor(unittest.TestCase):
         connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
         self.set_send_packet_side_effect(connect)
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connack, self.reactor.state)
         self.assertTrue(self.reactor.want_read())
@@ -299,20 +325,11 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(set(), self.reactor.active_send_packet_ids())
 
 
-class TestConnect(TestReactor, unittest.TestCase):
-    def test_immediate_connect(self):
-        self.start_to_immediate_connect()
-
-        connack = MqttConnack(False, ConnackResult.accepted)
-        self.read_packet_then_block(connack)
-        self.assertEqual(self.reactor.state, ReactorState.connected)
-
-        self.reactor.terminate()
-
-    def test_connect_fail_enohost(self):
+class TestDnsResolution(TestReactor, unittest.TestCase):
+    def test_synchronous_getaddrinfo_fail_enohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
-        self.socket.connect.side_effect = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        self.name_resolver.side_effect = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
@@ -330,6 +347,17 @@ class TestConnect(TestReactor, unittest.TestCase):
         # self.socket.send.assert_called_once_with(buffer_packet(connect))
         # self.assertEqual(self.reactor.state, ReactorState.connack)
         # self.socket.send.reset_mock()
+
+
+class TestConnect(TestReactor, unittest.TestCase):
+    def test_immediate_connect(self):
+        self.start_to_immediate_connect()
+
+        connack = MqttConnack(False, ConnackResult.accepted)
+        self.read_packet_then_block(connack)
+        self.assertEqual(self.reactor.state, ReactorState.connected)
+
+        self.reactor.terminate()
 
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
@@ -396,7 +424,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -649,7 +677,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         # Start a new connection which does not immediately connect.
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1005,7 +1033,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1019,7 +1047,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1036,7 +1064,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.endpoint)
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())

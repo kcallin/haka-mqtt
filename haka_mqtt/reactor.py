@@ -62,6 +62,8 @@ class ReactorProperties(object):
         re-connect.
     max_inflight_publish: int
         Maximum number of in-flight publish messages.
+    name_resolver: callable
+        DNS resolver.
     """
     def __init__(self):
         self.socket_factory = None
@@ -72,6 +74,7 @@ class ReactorProperties(object):
         self.scheduler = None
         self.clean_session = True
         self.max_inflight_publish = 1
+        self.name_resolver = None
 
 
 @unique
@@ -97,6 +100,7 @@ class ReactorState(IntEnum):
 
     """
     init = 0
+    name_resolution = 8
     connecting = 1
     handshake = 2
     connack = 3
@@ -114,6 +118,7 @@ INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 # States with active deadlines, open sockets, or pending I/O.
 #
 ACTIVE_STATES = (
+    ReactorState.name_resolution,
     ReactorState.connecting,
     ReactorState.handshake,
     ReactorState.connack,
@@ -191,7 +196,7 @@ class SocketError(ReactorError):
     errno: int
     """
     def __init__(self, errno_val):
-        assert errno_val in errno.errorcode
+        assert errno_val in errno.errorcode, errno_val
 
         self.errno = errno_val
 
@@ -278,6 +283,7 @@ class Reactor:
         assert 0 <= properties.keepalive_period <= 2**16-1
         assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
+        assert callable(properties.name_resolver)
 
         self.__log = logging.getLogger('haka')
         self.__wbuf = bytearray()
@@ -293,10 +299,11 @@ class Reactor:
         self.__keepalive_abort_deadline = None
         self.__last_poll_instant = None
         self.__clean_session = properties.clean_session
+        self.__name_resolver = properties.name_resolver
 
         self.__socket_factory = properties.socket_factory
         self.socket = None
-        self.endpoint = properties.endpoint
+        self.__host, self.__port = properties.endpoint
         self.__state = ReactorState.init
         self.__error = None
 
@@ -505,24 +512,47 @@ class Reactor:
 
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
-        self.socket = self.__socket_factory()
 
-        self.__state = ReactorState.connecting
+        self.__state = ReactorState.name_resolution
+
         try:
-            self.__log.info('Enter connect')
-            # TODO: Asynchronous DNS lookup.
-            self.socket.connect(self.endpoint)
-            self.__log.info('Exit connect')
-            self.__on_connect()
+            results = self.__name_resolver(self.__host, self.__port, callback=self.__on_name_resolution)
         except socket.gaierror as e:
+            self.__on_name_resolution(e)
+        else:
+            if results is not None:
+                self.__on_name_resolution(results)
+
+    def __on_name_resolution(self, results):
+        assert results is not None
+
+        if isinstance(results, socket.gaierror):
+            e = results
             self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
             self.__abort(AddressingReactorError(e))
+        else:
+            if len(results) == 0:
+                self.__log.error('No hostname entry found.  Aborting.')
+                self.__abort(AddressingReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
+            elif len(results) > 0:
+                sockaddr = results[0][4]
+                self.__connect(sockaddr)
+            else:
+                raise NotImplementedError()
+
+    def __connect(self, sockaddr):
+        try:
+            self.__state = ReactorState.connecting
+            self.socket = self.__socket_factory()
+            self.socket.connect(sockaddr)
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:
                 # Connection in progress.
-                self.__log.info('Connecting to %s:%d.', *self.endpoint)
+                self.__log.info('Connecting to %s:%d.', self.__host, self.__port)
             else:
                 self.__abort_socket_error(SocketError(e.errno))
+        else:
+            self.__on_connect()
 
     def start(self):
         """Attempts to connect with remote if in one of the inactive
@@ -1242,21 +1272,22 @@ class Reactor:
         error: ReactorError
         """
         if self.state in ACTIVE_STATES:
-            if self.state in (ReactorState.connecting, ReactorState.connack):
+            if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
                 on_disconnect_cb = self.on_connect_fail
             elif self.state in (ReactorState.connected, ReactorState.stopping):
                 on_disconnect_cb = self.on_disconnect
             else:
                 raise NotImplementedError(self.state)
 
-            try:
-                self.socket.shutdown(socket.SHUT_RDWR)
-            except socket.error as e:
-                if e.errno == errno.ENOTCONN:
-                    pass
-                else:
-                    raise
-            self.socket.close()
+            if self.socket is not None:
+                try:
+                    self.socket.shutdown(socket.SHUT_RDWR)
+                except socket.error as e:
+                    if e.errno == errno.ENOTCONN:
+                        pass
+                    else:
+                        raise
+                self.socket.close()
         else:
             on_disconnect_cb = None
 

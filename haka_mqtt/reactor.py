@@ -210,7 +210,7 @@ class SocketError(ReactorError):
         return self.errno == other.errno
 
 
-class AddressingReactorError(ReactorError):
+class AddressReactorError(ReactorError):
     """
     Parameters
     ----------
@@ -219,6 +219,7 @@ class AddressingReactorError(ReactorError):
 
     def __init__(self, gaierror):
         assert isinstance(gaierror, socket.gaierror)
+        self.gaierror = gaierror
         self.__errno = gaierror.errno
         self.__desc = gaierror.strerror
 
@@ -233,7 +234,10 @@ class AddressingReactorError(ReactorError):
         return self.__desc
 
     def __repr__(self):
-        return '{}({} ({}))'.format(self.__class__.__name__, self.errno, self.description)
+        return '{}({})'.format(self.__class__.__name__, repr(self.gaierror))
+
+    def __eq__(self,  other):
+        return hasattr(other, 'gaierror') and self.gaierror == other.gaierror
 
 
 class DecodeReactorError(ReactorError):
@@ -542,11 +546,11 @@ class Reactor:
         if isinstance(results, socket.gaierror):
             e = results
             self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
-            self.__abort(AddressingReactorError(e))
+            self.__abort(AddressReactorError(e))
         else:
             if len(results) == 0:
                 self.__log.error('No hostname entry found.  Aborting.')
-                self.__abort(AddressingReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
+                self.__abort(AddressReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
             elif len(results) > 0:
                 self.__log_name_resolution(results[0], chosen=True)
                 for result in results[1:]:

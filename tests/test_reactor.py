@@ -37,7 +37,7 @@ from haka_mqtt.reactor import (
     ReactorProperties,
     ReactorState,
     KeepaliveTimeoutReactorError,
-    MqttConnectFail, INACTIVE_STATES, SocketError)
+    MqttConnectFail, INACTIVE_STATES, SocketError, AddressReactorError)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -329,24 +329,33 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
     def test_synchronous_getaddrinfo_fail_enohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
-        self.name_resolver.side_effect = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        self.name_resolver.side_effect = e
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
-        #
-        #
-        # connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
-        # self.set_send_packet_side_effect(connect)
-        #
-        # self.reactor.start()
-        # self.socket.connect.assert_called_once_with(self.endpoint)
-        # self.socket.connect.reset_mock()
-        # self.assertEqual(ReactorState.connack, self.reactor.state)
-        # self.assertTrue(self.reactor.want_read())
-        # self.assertFalse(self.reactor.want_write())
-        # self.socket.send.assert_called_once_with(buffer_packet(connect))
-        # self.assertEqual(self.reactor.state, ReactorState.connack)
-        # self.socket.send.reset_mock()
+        self.assertEqual(AddressReactorError(e), self.reactor.error)
+
+    def test_async_getaddrinfo_fail_enohost(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        self.name_resolver.return_value = None
+        self.reactor.start()
+        self.assertEqual(ReactorState.name_resolution, self.reactor.state)
+
+        self.assertEqual(ReactorState.name_resolution, self.reactor.state)
+        self.on_connect_fail.assert_not_called()
+        self.on_disconnect.assert_not_called()
+
+        kwargs = self.name_resolver.call_args[1]
+        callable = kwargs['callback']
+        callable(e)
+        self.on_connect_fail.assert_called_once_with(self.reactor)
+        self.on_disconnect.assert_not_called()
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertEqual(AddressReactorError(e), self.reactor.error)
+
 
 
 class TestConnect(TestReactor, unittest.TestCase):

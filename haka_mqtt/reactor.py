@@ -219,19 +219,12 @@ class AddressReactorError(ReactorError):
 
     def __init__(self, gaierror):
         assert isinstance(gaierror, socket.gaierror)
-        self.gaierror = gaierror
-        self.__errno = gaierror.errno
-        self.__desc = gaierror.strerror
+        self.__gaierror = gaierror
 
     @property
-    def errno(self):
-        """int: Address error number."""
-        return self.__errno
-
-    @property
-    def description(self):
-        """str: Error description."""
-        return self.__desc
+    def gaierror(self):
+        """socket.gaierror: Addressing error."""
+        return self.__gaierror
 
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, repr(self.gaierror))

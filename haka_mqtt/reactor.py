@@ -172,14 +172,6 @@ class MqttConnectFail(ReactorError):
         return self.result == other.result
 
 
-class ProtocolViolationReactorError(ReactorError):
-    def __init__(self, desc):
-        self.description = desc
-
-    def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, self.description)
-
-
 class KeepaliveTimeoutReactorError(ReactorError):
     def __eq__(self, other):
         return isinstance(other, KeepaliveTimeoutReactorError)
@@ -619,7 +611,7 @@ class Reactor:
 
         if self.state in INACTIVE_STATES:
             self.__start()
-        elif self.state in (ReactorState.connecting, ReactorState.connack):
+        elif self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
             self.__log.warning("Start called while already connecting to server; taking no additional action.")
         elif self.state is ReactorState.connected:
             self.__log.warning("Start called while already connected; taking no action.")
@@ -825,7 +817,7 @@ class Reactor:
             self.__launch_next_queued_packet()
 
     def __on_connack(self, connack):
-        """
+        """Called once when a connack packet is received.
 
         Parameters
         ----------
@@ -855,18 +847,18 @@ class Reactor:
                 self.__log.error('Connect failed: not authorized.')
                 self.__abort(MqttConnectFail(connack.return_code))
             else:
-                # TODO: This is a protocol violation.
                 raise NotImplementedError(connack.return_code)
-        else:
+        elif self.state is ReactorState.connected:
             self.__abort_protocol_violation('Received connack at an inappropriate time.')
+        else:
+            raise NotImplementedError(self.state)
 
     def __on_publish(self, publish):
-        """
+        """Called when a publish packet is received from the remote.
 
         Parameters
         ----------
         publish: MqttPublish
-
         """
         if self.state is ReactorState.connected:
             self.__log.info('Received %s.', repr(publish))
@@ -880,7 +872,8 @@ class Reactor:
             elif publish.qos == 2:
                 self.__preflight_queue.append(MqttPubrec(publish.packet_id))
                 # TODO: Record publish packet
-                # raise NotImplementedError()
+            else:
+                raise NotImplementedError(publish.qos)
         elif self.state is ReactorState.stopping:
             if publish.qos == 0:
                 pass
@@ -895,12 +888,11 @@ class Reactor:
             raise NotImplementedError(self.state)
 
     def __on_suback(self, suback):
-        """
+        """Called when a suback packet is received from remote.
 
         Parameters
         ----------
         suback: MqttSuback
-
         """
         if self.state is ReactorState.connected:
             idx = index(self.__inflight_queue,
@@ -910,7 +902,10 @@ class Reactor:
             else:
                 subscribe = self.__inflight_queue[idx]
 
-            if subscribe:
+            if subscribe is None:
+                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
+                                                repr(suback))
+            else:
                 if len(suback.results) == len(subscribe.topics):
                     self.__log.info('Received %s.', repr(suback))
                     subscribe._set_status(MqttSubscribeStatus.done)
@@ -925,15 +920,12 @@ class Reactor:
                         ' results does not equal the number of subscription requests; aborting.'
                     self.__abort_protocol_violation(m,
                                                     repr(suback),
-                                                    repr(subscribe))
-            else:
-                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
-                                                repr(suback))
+                                                    repr(subscribe.packet()))
         else:
             raise NotImplementedError(self.state)
 
     def __on_puback(self, puback):
-        """
+        """Called when a puback packet is received from the remote.
 
         Parameters
         ----------

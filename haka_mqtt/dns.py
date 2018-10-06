@@ -144,8 +144,6 @@ class SynchronousDnsResolver(object):
 
         Parameters
         ----------
-        on_resolution: callable
-            Ignored.
         host: str or None
             A host `str` must contain either a domain name for lookup
             or a string representation of an IPv4/v6 address.
@@ -157,6 +155,8 @@ class SynchronousDnsResolver(object):
         proto: int
         flags: int
             One or several of the AI_* constants; default is zero.
+        callback: callable
+            Ignored.
 
         Raises
         ------

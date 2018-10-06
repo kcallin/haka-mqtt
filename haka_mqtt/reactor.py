@@ -53,6 +53,9 @@ class ReactorProperties(object):
     socket_factory: haka_mqtt.socket_factory.SocketFactory
     client_id: str
     clock:
+    endpoint: tuple
+        2-tuple of (host: `str`, port: `int`).  The `port` value is
+        constrainted such that 0 <= `port` <= 2**16-1.
     keepalive_period: int
         0 <= keepalive_period <= 2*16-1
     clean_session: bool
@@ -284,6 +287,10 @@ class Reactor:
         assert isinstance(properties.keepalive_period, int)
         assert isinstance(properties.clean_session, bool)
         assert callable(properties.name_resolver)
+        host, port = properties.endpoint
+        assert isinstance(host, str)
+        assert 0 <= port <= 2**16-1
+        assert isinstance(port, int)
 
         self.__log = logging.getLogger('haka')
         self.__wbuf = bytearray()
@@ -517,7 +524,12 @@ class Reactor:
         self.__state = ReactorState.name_resolution
 
         try:
-            results = self.__name_resolver(self.__host, self.__port, callback=self.__on_name_resolution)
+            self.__log.info('Looking up host %s:%d.', self.__host, self.__port)
+            results = self.__name_resolver(self.__host,
+                                           self.__port,
+                                           socktype=socket.SOCK_STREAM,
+                                           proto=socket.IPPROTO_TCP,
+                                           callback=self.__on_name_resolution)
         except socket.gaierror as e:
             self.__on_name_resolution(e)
         else:
@@ -536,12 +548,56 @@ class Reactor:
                 self.__log.error('No hostname entry found.  Aborting.')
                 self.__abort(AddressingReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
             elif len(results) > 0:
-                sockaddr = results[0][4]
-                self.__connect(sockaddr)
+                self.__log_name_resolution(results[0], chosen=True)
+                for result in results[1:]:
+                    self.__log_name_resolution(result)
+                self.__connect(results[0])
             else:
                 raise NotImplementedError()
 
-    def __connect(self, sockaddr):
+    def __log_name_resolution(self, resolution, chosen=False):
+        family, socktype, proto, canonname, sockaddr = resolution
+
+        family_str = {
+            socket.AF_INET: 'inet',
+            socket.AF_INET6: 'inet6',
+        }.get(family, str(family))
+
+        socktype_str = {
+            socket.SOCK_DGRAM: 'sock_dgram',
+            socket.SOCK_STREAM: 'sock_stream',
+            socket.SOCK_RAW: 'sock_raw',
+        }.get(socktype, str(socktype))
+
+        proto_str = {
+            socket.IPPROTO_TCP: 'tcp',
+            socket.IPPROTO_IP: 'ip',
+            socket.IPPROTO_UDP: 'udp',
+        }.get(proto, str(proto))
+
+        if chosen:
+            chosen_postfix = ' (chosen)'
+        else:
+            chosen_postfix = ' '
+
+        if family == socket.AF_INET:
+            ip, port = sockaddr
+            self.__log.info("Found family=inet sock=%s proto=%s addr=%s:%d%s", socktype_str, proto_str, ip, port, chosen_postfix)
+        elif family == socket.AF_INET6:
+            ip6, port, flow_info, scope_id = sockaddr
+            self.__log.info("Found family=inet6 sock=%s proto=%s addr=%s:%d%s", socktype_str, proto_str, ip6, port, chosen_postfix)
+        else:
+            raise NotImplementedError()
+
+    def __connect(self, resolution):
+        """Connect to the given resolved address.
+
+        Parameters
+        ----------
+        resolution: 5-tuple
+            A 5-tuple of (family, socktype, proto, canonname, sockaddr)
+            as returned by `socket.getaddrinfo`."""
+        family, socktype, proto, canonname, sockaddr = resolution
         try:
             self.__state = ReactorState.connecting
             self.socket = self.__socket_factory()
@@ -549,7 +605,7 @@ class Reactor:
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:
                 # Connection in progress.
-                self.__log.info('Connecting to %s:%d.', self.__host, self.__port)
+                self.__log.info("Connecting.")
             else:
                 self.__abort_socket_error(SocketError(e.errno))
         else:

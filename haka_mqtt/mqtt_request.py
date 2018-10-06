@@ -176,11 +176,16 @@ class MqttSubscribeTicket(MqttRequest):
     def __init__(self, packet_id, topics):
         super(MqttSubscribeTicket, self).__init__(packet_id, MqttControlPacketType.subscribe)
 
-        self.topics = tuple(topics)
+        self.__topics = tuple(topics)
         if isinstance(topics, (str, unicode, bytes)):
             raise TypeError()
         assert len(topics) >= 1  # MQTT 3.8.3-3
         self.__status = MqttSubscribeStatus.preflight
+
+    @property
+    def topics(self):
+        """iterable of MqttTopic: topics subscribed to."""
+        return self.__topics
 
     def _set_status(self, s):
         """
@@ -207,6 +212,13 @@ class MqttSubscribeTicket(MqttRequest):
     def encode(self, f):
         return self.packet().encode(f)
 
+    def __eq__(self, other):
+        return (
+            hasattr(other, 'topics')
+            and self.topics == other.topics
+            and hasattr(other, 'status')
+            and self.status == other.status
+        )
 
 class MqttUnsubscribeRequest(MqttRequest):
     """

@@ -31,7 +31,7 @@ from mqtt_codec.packet import (
     MqttPubcomp,
     MqttPingreq,
 )
-from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus
+from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus, MqttSubscribeTicket
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -123,7 +123,10 @@ class TestReactor(unittest.TestCase):
         self.socket = Mock()
         self.endpoint = ('test.mosquitto.org', 1883)
         self.name_resolver = Mock()
-        self.name_resolver.return_value = [self.af_inet_name_resolution()]
+        self.name_resolver.return_value = [
+            self.af_inet_name_resolution(),
+            self.af_inet6_name_resolution()
+        ]
         self.client_id = 'client'
         self.keepalive_period = 10*60
         self.scheduler = Scheduler()
@@ -484,6 +487,76 @@ class TestConnackFail(TestReactor, unittest.TestCase):
             self.read_packet_then_block(connack)
             self.assertEqual(self.reactor.state, ReactorState.error)
             self.assertEqual(self.reactor.error, MqttConnectFail(fail_code))
+
+
+class TestSubscribePath(TestReactor, unittest.TestCase):
+    def start_to_subscribe(self):
+        self.start_to_connack()
+
+        # Create subscribe
+        topics = [
+            MqttTopic('topic1', 1),
+            MqttTopic('topic2', 2),
+        ]
+        est = MqttSubscribeTicket(0, topics)
+        subscribe_ticket = self.reactor.subscribe(topics)
+        self.assertEqual(est, subscribe_ticket)
+
+        self.send_packet(MqttSubscribe(est.packet_id, est.topics))
+
+    def test_subscribe(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+        5. Creates subscribe
+        6. Socket transmits subscribe.
+        7. Socket receives suback.
+        """
+        self.start_to_subscribe()
+
+        sp = MqttSuback(0, [SubscribeResult.qos1, SubscribeResult.qos2])
+        self.read_packet_then_block(sp)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        self.reactor.terminate()
+
+    def test_subscribe_bad_suback_packet_id(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+        5. Creates subscribe
+        6. Socket transmits subscribe.
+        7. Socket receives suback.
+        """
+        self.start_to_subscribe()
+
+        sp = MqttSuback(1, [SubscribeResult.qos1, SubscribeResult.qos2])
+        self.read_packet_then_block(sp)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+
+        self.reactor.terminate()
+
+    def test_subscribe_bad_num_suback_results(self):
+        """
+        1. Call start
+        2. Socket does not immediately connect (EINPROGRESS)
+        3. Socket transmits connect
+        4. Socket receives connack
+        5. Creates subscribe
+        6. Socket transmits subscribe.
+        7. Socket receives suback.
+        """
+        self.start_to_subscribe()
+
+        sp = MqttSuback(0, [SubscribeResult.qos1])
+        self.read_packet_then_block(sp)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+
+        self.reactor.terminate()
 
 
 class TestSendPathQos0(TestReactor, unittest.TestCase):

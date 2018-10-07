@@ -222,7 +222,11 @@ class AddressReactorError(ReactorError):
         return '{}({})'.format(self.__class__.__name__, repr(self.gaierror))
 
     def __eq__(self,  other):
-        return hasattr(other, 'gaierror') and self.gaierror == other.gaierror
+        return (
+            hasattr(other, 'gaierror')
+            and self.gaierror.errno == other.gaierror.errno
+            and self.gaierror.message == other.gaierror.message
+        )
 
 
 class DecodeReactorError(ReactorError):
@@ -534,7 +538,7 @@ class Reactor:
             self.__abort(AddressReactorError(e))
         else:
             if len(results) == 0:
-                self.__log.error('No hostname entry found.  Aborting.')
+                self.__log.error('No hostname entries found.  Aborting.')
                 self.__abort(AddressReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
             elif len(results) > 0:
                 self.__log_name_resolution(results[0], chosen=True)

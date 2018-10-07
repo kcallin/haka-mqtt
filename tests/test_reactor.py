@@ -329,7 +329,7 @@ class TestReactor(unittest.TestCase):
 
 
 class TestDnsResolution(TestReactor, unittest.TestCase):
-    def test_synchronous_getaddrinfo_fail_enohost(self):
+    def test_sync_getaddrinfo_fail_enohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
@@ -337,6 +337,17 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
+        self.assertEqual(AddressReactorError(e), self.reactor.error)
+
+    def test_sync_getaddrinfo_fail_nohost(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        self.name_resolver.return_value = []
+        self.reactor.start()
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.on_connect_fail.assert_called_once()
+
+        e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
         self.assertEqual(AddressReactorError(e), self.reactor.error)
 
     def test_async_getaddrinfo_fail_enohost(self):
@@ -358,7 +369,6 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertEqual(AddressReactorError(e), self.reactor.error)
-
 
 
 class TestConnect(TestReactor, unittest.TestCase):

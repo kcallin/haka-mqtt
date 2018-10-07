@@ -1,3 +1,4 @@
+from __future__ import print_function
 import argparse
 import logging
 import ssl
@@ -38,6 +39,7 @@ class MqttClient():
         self.__running = False
 
         self.__pub_deadline = None
+        self.__reconnect_deadline = None
 
     def is_running(self):
         return self.__running
@@ -46,7 +48,15 @@ class MqttClient():
         print('disconnect', repr(reactor.error))
 
     def __on_connect_fail(self, reactor):
-        print('connect_fail', repr(reactor.error))
+        assert self.__reconnect_deadline is None
+        print('connect_fail', reactor.error)
+        self.__reconnect_deadline = self.__scheduler.add(30., self.__reconnect_timeout)
+
+    def __reconnect_timeout(self):
+        self.__reconnect_deadline.cancel()
+        self.__reconnect_deadline = None
+
+        self.__reactor.start()
 
     def __on_suback(self, reactor, p):
         """

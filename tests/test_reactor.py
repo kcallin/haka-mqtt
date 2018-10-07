@@ -37,7 +37,7 @@ from haka_mqtt.reactor import (
     ReactorProperties,
     ReactorState,
     KeepaliveTimeoutReactorError,
-    MqttConnectFail, INACTIVE_STATES, SocketError, AddressReactorError)
+    MqttConnectFail, INACTIVE_STATES, SocketError, AddressReactorError, DecodeReactorError)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -381,32 +381,20 @@ class TestConnect(TestReactor, unittest.TestCase):
 
         self.reactor.terminate()
 
+    def test_immediate_connect_socket_error(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        e = errno.ECONNABORTED
+        socket_error = socket.error(errno.ECONNABORTED, os.strerror(e))
+        self.socket.connect.side_effect = socket_error
+        self.reactor.start()
+        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.reset_mock()
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertEqual(SocketError(e), self.reactor.error)
+
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
-    def test_connack_keepalive_timeout(self):
-        self.start_to_connack()
-        p = MqttPingreq()
-        self.set_send_packet_side_effect(p)
-        self.assertFalse(self.reactor.want_write())
-        self.scheduler.poll(self.keepalive_period)
-        self.assertTrue(self.reactor.want_write())
-        self.reactor.write()
-        self.assertFalse(self.reactor.want_write())
-        self.socket.send.assert_called_once_with(buffer_packet(p))
-        self.socket.send.reset_mock()
-
-        self.scheduler.poll(self.keepalive_period * 0.5)
-        self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorError())
-
-    def test_connack_unexpected_session_present(self):
-        self.start_to_connect()
-
-        connack = MqttConnack(True, ConnackResult.accepted)
-        self.read_packet_then_block(connack)
-        self.assertEqual(self.reactor.state, ReactorState.error)
-        self.on_connack.assert_not_called()
-
     def test_start(self):
         self.start_to_connack()
 
@@ -484,9 +472,41 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
         self.reactor.terminate()
 
+    def test_recv_connect(self):
+        self.start_to_connack()
+
+        connect = MqttConnect('client', False, 0)
+        self.read_packet_then_block(connect)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, DecodeReactorError))
+
 
 class TestConnackFail(TestReactor, unittest.TestCase):
-    def test_connack_failures(self):
+    def test_connack_keepalive_timeout(self):
+        self.start_to_connack()
+        p = MqttPingreq()
+        self.set_send_packet_side_effect(p)
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(self.keepalive_period)
+        self.assertTrue(self.reactor.want_write())
+        self.reactor.write()
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.assert_called_once_with(buffer_packet(p))
+        self.socket.send.reset_mock()
+
+        self.scheduler.poll(self.keepalive_period * 0.5)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorError())
+
+    def test_connack_unexpected_session_present(self):
+        self.start_to_connect()
+
+        connack = MqttConnack(True, ConnackResult.accepted)
+        self.read_packet_then_block(connack)
+        self.assertEqual(self.reactor.state, ReactorState.error)
+        self.on_connack.assert_not_called()
+
+    def test_connack_fail_codes(self):
         fail_codes = [r for r in ConnackResult if r != ConnackResult.accepted]
         fail_codes.sort()
 

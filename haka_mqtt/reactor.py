@@ -1087,7 +1087,7 @@ class Reactor:
     def __on_muted_remote(self):
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
-            self.__abort(DecodeReactorError('Remote closed unexpectedly.'))
+            self.__abort(ReactorError('Remote closed unexpectedly.'))
         elif self.state in (ReactorState.stopping,):
             if len(self.__rbuf) > 0:
                 m = 'While stopping remote closed stream in the middle' \

@@ -61,10 +61,4 @@ Requirements
 The project will eventually track requirements using a project like
 `Pipfile <https://github.com/pypa/pipfile>`_.
 
-Building Documentation
-=======================
-
-
-
-
 

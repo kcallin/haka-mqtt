@@ -6,6 +6,7 @@ from Queue import (
     Queue,
     Empty,
 )
+from time import sleep
 
 
 def getaddrinfo_enqueue(queue, wd, request_id, params):
@@ -21,12 +22,18 @@ def getaddrinfo_enqueue(queue, wd, request_id, params):
     try:
         rv = socket.getaddrinfo(*params)
         queue.put((request_id, rv))
-        while True:
-            num_bytes_written = os.write(wd, 'x')
-            if num_bytes_written == 1:
-                break
     except socket.gaierror as e:
         queue.put((request_id, e))
+
+    while True:
+        num_bytes_written = os.write(wd, 'x')
+        if num_bytes_written == 1:
+            break
+        elif num_bytes_written == 0:
+            sleep(0.01)
+        else:
+            raise NotImplementedError(num_bytes_written)
+
 
 
 class AsyncDnsResolver(object):
@@ -71,6 +78,12 @@ class AsyncDnsResolver(object):
             One or several of the AI_* constants; default is zero.
         callback: callable or None
 
+        Raises
+        -------
+        socket.gaierror
+            When closing raises gaierror with a socket.EAI_FAIL failure
+            code.
+
         Returns
         -------
         list of 5-tuples
@@ -87,7 +100,7 @@ class AsyncDnsResolver(object):
             and is meant to be passed to the socket.connect() method.
         """
         if self.__closing:
-            raise socket.gaierror(socket.EAI_SYSTEM, 'error.')
+            raise socket.gaierror(socket.EAI_FAIL, 'asynchronous name lookup service is closing and not accepting further queries.')
 
         getaddrinfo_params = (host, port, family, socktype, proto, flags)
         try:

@@ -1321,12 +1321,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
 
         # Send disconnect packet
         disconnect = MqttDisconnect()
-        buf = buffer_packet(disconnect)
-        self.set_send_side_effect([len(buf)])
-
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buf)
-        self.socket.send.reset_mock()
+        self.send_packet(disconnect)
 
         self.assertEqual(ReactorState.mute, self.reactor.state)
 
@@ -1341,8 +1336,17 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.recv_mute()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
-    def test_connected(self):
-        pass
+    def test_connected_with_empty_preflight(self):
+        self.start_to_connack()
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_mute()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_stopping(self):
         pass
@@ -1351,7 +1355,14 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         pass
 
     def test_stopped(self):
-        pass
+        self.reactor.stop()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
+        self.reactor.stop()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_error(self):
-        pass
+        self.socket.connect.side_effect = socket_error(errno.ECONNREFUSED)
+        self.reactor.start()
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.reactor.stop()
+        self.assertEqual(ReactorState.error, self.reactor.state)

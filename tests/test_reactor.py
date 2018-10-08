@@ -9,6 +9,7 @@ from __future__ import print_function
 import errno
 import logging
 import os
+import ssl
 import sys
 import unittest
 import socket
@@ -267,7 +268,7 @@ class TestReactor(unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
 
-    def start_to_connect(self, preflight_queue=[]):
+    def start_to_handshake(self):
         """
         1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
         2. Socket becomes connected.
@@ -277,6 +278,7 @@ class TestReactor(unittest.TestCase):
 
         # Set up start call.
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
+        self.socket.getsockopt.return_value = 0
 
         self.reactor.start()
 
@@ -288,7 +290,27 @@ class TestReactor(unittest.TestCase):
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
 
+        # Connect occurs
         self.socket.getsockopt.return_value = 0
+        self.socket.do_handshake.side_effect = ssl.SSLWantWriteError()
+
+        self.reactor.write()
+
+        self.assertEqual(ReactorState.handshake, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.assertTrue(self.reactor.want_read())
+
+        self.socket.do_handshake.side_effect = None
+        self.socket.do_handshake.reset_mock()
+
+    def start_to_connect(self, preflight_queue=[]):
+        """
+        1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
+        2. Socket becomes connected.
+        3. MqttConnect is sent to server.
+        """
+        self.start_to_handshake()
+
         connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
         buf = buffer_packet(connect)
         for p in preflight_queue:
@@ -1366,3 +1388,51 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.reactor.stop()
         self.assertEqual(ReactorState.error, self.reactor.state)
+
+
+class TestPingresp(TestReactor, unittest.TestCase):
+    def test_handshake(self):
+        # Start with async connect
+        self.start_to_handshake()
+
+        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+
+    def test_connack(self):
+        # Start with async connect
+        self.start_to_connect()
+
+        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+
+    def test_connected(self):
+        self.start_to_connack()
+
+        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+
+    def test_stopping(self):
+        self.start_to_connack()
+        self.reactor.stop()
+        # TODO: Verify stopping state is used/entered correctly.
+        # self.assertEqual(ReactorState.stopping, self.reactor.state)
+
+        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+
+    def test_mute(self):
+        self.start_to_connack()
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))

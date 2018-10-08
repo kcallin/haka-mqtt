@@ -399,8 +399,7 @@ class Reactor:
             assert self.__keepalive_abort_deadline is None
 
         if self.state in (ReactorState.name_resolution,
-                          ReactorState.connecting,
-                          ReactorState.handshake):
+                          ReactorState.connecting):
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
 
@@ -1287,8 +1286,10 @@ class Reactor:
                 self.__inflight_queue.append(packet_record)
                 self.socket.shutdown(socket.SHUT_WR)
                 self.__state = ReactorState.mute
-                self.__keepalive_due_deadline.cancel()
-                self.__keepalive_due_deadline = None
+
+                if self.__keepalive_due_deadline is not None:
+                    self.__keepalive_due_deadline.cancel()
+                    self.__keepalive_due_deadline = None
                 # TODO: Stop keepalive messages?
                 # TODO: What if remote takes forever to close?
 
@@ -1351,7 +1352,6 @@ class Reactor:
         assert self.state == ReactorState.connecting
 
         self.__log.info('Connected.')
-        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
                                                                self.__keepalive_abort_timeout)
 
@@ -1405,7 +1405,7 @@ class Reactor:
 
         self.__enable = False
         if self.state in ACTIVE_STATES:
-            if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
+            if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.handshake, ReactorState.connack):
                 on_disconnect_cb = self.on_connect_fail
             elif self.state in (ReactorState.connected, ReactorState.stopping, ReactorState.mute):
                 on_disconnect_cb = self.on_disconnect
@@ -1482,11 +1482,19 @@ class Reactor:
         assert self.__keepalive_due_deadline is None
         assert self.__keepalive_abort_deadline is not None
 
-        assert self.state in (
-            ReactorState.connack,
-            ReactorState.connected,
-            ReactorState.stopping,
-        )
+        if self.state in (
+                ReactorState.handshake,
+                ReactorState.connack,
+                ReactorState.connected,
+                ReactorState.stopping,
+                ReactorState.mute):
+
+            msg = "More than abort period (%.01fs) has passed since last bytes received.  Aborting."
+            self.__log.warning(msg, self.keepalive_timeout_period)
+        else:
+            raise NotImplementedError(self.state)
+
+        self.__keepalive_abort_deadline = None
 
         self.__abort(KeepaliveTimeoutReactorError())
 

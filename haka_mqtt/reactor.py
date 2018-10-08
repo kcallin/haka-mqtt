@@ -1278,8 +1278,8 @@ class Reactor:
                 if self.__keepalive_due_deadline is not None:
                     self.__keepalive_due_deadline.cancel()
                     self.__keepalive_due_deadline = None
-                # TODO: Stop keepalive messages?
-                # TODO: What if remote takes forever to close?
+
+                assert self.__keepalive_abort_deadline is not None
 
         if num_bytes_flushed:
             self.__log.debug('Wrote %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))

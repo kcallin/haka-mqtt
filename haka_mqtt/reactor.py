@@ -165,24 +165,30 @@ class ReactorError(object):
     pass
 
 
-class ReactorError(object):
-    pass
-
-
 class RemoteMutedError(ReactorError):
+    """Error that occurs when the server closes its write stream
+    unexpectedly."""
     pass
 
 
 class MqttConnectFail(ReactorError):
+    """Error that occurs when the server sends a connack fail in
+    response to an initial connect packet."""
     def __init__(self, result):
         assert result != ConnackResult.accepted
-        self.result = result
+        self.__result = result
+
+    @property
+    def result(self):
+        """ConnackResult: guaranteed that value is not `ConnackResult.accepted`."""
+        return self.__result
 
     def __eq__(self, other):
-        return self.result == other.result
+        return hasattr(other, 'result') and self.result == other.result
 
 
 class KeepaliveTimeoutReactorError(ReactorError):
+    """Server fails to respond in a timely fashion."""
     def __eq__(self, other):
         return isinstance(other, KeepaliveTimeoutReactorError)
 
@@ -191,19 +197,21 @@ class KeepaliveTimeoutReactorError(ReactorError):
 
 
 class SocketError(ReactorError):
-    """
+    """A socket call failed.
+
     Parameters
     ----------
     errno_val: int
-
-    Attributes
-    ----------
-    errno: int
     """
     def __init__(self, errno_val):
         assert errno_val in errno.errorcode, errno_val
 
-        self.errno = errno_val
+        self.__errno = errno_val
+
+    @property
+    def errno(self):
+        """int: value in `errno.errorcode`."""
+        return self.__errno
 
     def __repr__(self):
         return 'SocketError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
@@ -213,7 +221,8 @@ class SocketError(ReactorError):
 
 
 class AddressReactorError(ReactorError):
-    """
+    """Failed to lookup a valid address.
+
     Parameters
     ----------
     gaierror: socket.gaierror
@@ -235,35 +244,22 @@ class AddressReactorError(ReactorError):
         return (
             hasattr(other, 'gaierror')
             and self.gaierror.errno == other.gaierror.errno
+            and hasattr(other, 'gaierror')
             and self.gaierror.message == other.gaierror.message
         )
 
 
 class DecodeReactorError(ReactorError):
+    """Server wrote a sequence of bytes that could not be interpreted as
+    an MQTT packet."""
     def __init__(self, description):
         self.description = description
 
 
 class ProtocolViolationError(ReactorError):
+    """Server send an inappropriate MQTT packet to the client."""
     def __init__(self, description):
         self.description = description
-
-
-FREE_LAUNCH_PACKET_TYPES = {
-    MqttControlPacketType.connect,
-    MqttControlPacketType.connack,
-    MqttControlPacketType.puback,
-    MqttControlPacketType.pubrec,
-    MqttControlPacketType.pubrel,
-    MqttControlPacketType.pubcomp,
-    MqttControlPacketType.subscribe,
-    MqttControlPacketType.suback,
-    MqttControlPacketType.unsubscribe,
-    MqttControlPacketType.unsuback,
-    MqttControlPacketType.pingreq,
-    MqttControlPacketType.pingresp,
-    MqttControlPacketType.disconnect,
-}
 
 
 class Reactor:

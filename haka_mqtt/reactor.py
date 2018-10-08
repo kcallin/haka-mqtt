@@ -880,14 +880,15 @@ class Reactor:
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
-        if self.state in (ReactorState.connack, ReactorState.stopping, ReactorState.mute):
+        # TODO: connack accepted only happens at certain times.
+        if self.state in (ReactorState.connack, ReactorState.mute):
             if connack.session_present and self.clean_session:
                 # [MQTT-3.2.2-1]
                 self.__abort_protocol_violation('Server indicates a session is present when none was requested.')
             else:
                 if self.state is ReactorState.connack:
                     self.__state = ReactorState.connected
-                elif self.state in (ReactorState.stopping, ReactorState.mute):
+                elif self.state is ReactorState.mute:
                     pass
                 else:
                     raise NotImplementedError(self.state)
@@ -906,7 +907,8 @@ class Reactor:
         ----------
         connack: MqttConnack
         """
-        if self.state in (ReactorState.connack, ReactorState.stopping, ReactorState.mute):
+        # TODO: Can this method ever be reached while mute?
+        if self.state in (ReactorState.connack, ReactorState.mute):
             self.__log.info('Received %s.', repr(connack))
 
             if connack.return_code == ConnackResult.accepted:
@@ -956,16 +958,17 @@ class Reactor:
                 # TODO: Record publish packet
             else:
                 raise NotImplementedError(publish.qos)
-        elif self.state is ReactorState.stopping:
-            if publish.qos == 0:
-                pass
-            elif publish.qos == 1:
-                self.__log.info('Receiving %s but not sending puback because client is stopping.', repr(publish))
-            elif publish.qos == 2:
-                raise NotImplementedError()
-
-            if self.on_publish is not None:
-                self.on_publish(self, publish)
+        # TODO: publish arrives while mute.
+        # elif self.state is ReactorState.stopping:
+        #     if publish.qos == 0:
+        #         pass
+        #     elif publish.qos == 1:
+        #         self.__log.info('Receiving %s but not sending puback because client is stopping.', repr(publish))
+        #     elif publish.qos == 2:
+        #         raise NotImplementedError()
+        #
+        #     if self.on_publish is not None:
+        #         self.on_publish(self, publish)
         else:
             raise NotImplementedError(self.state)
 
@@ -1014,7 +1017,7 @@ class Reactor:
         puback: MqttPuback
 
         """
-        if self.state in (ReactorState.connected, ReactorState.stopping, ReactorState.mute):
+        if self.state in (ReactorState.connected, ReactorState.mute):
             idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
             if idx is None:
                 publish = None
@@ -1165,24 +1168,9 @@ class Reactor:
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
             self.__abort(RemoteMutedError())
-        elif self.state in (ReactorState.stopping, ReactorState.mute):
-            if self.state is ReactorState.stopping:
-                if len(self.__rbuf) > 0:
-                    m = 'While stopping remote closed stream in the middle' \
-                        ' of a packet (input buffer contains 0x%s).'
-                    self.__log.warning(m, b2a_hex(self.__rbuf))
-                    self.__terminate(ReactorState.error, RemoteMutedError())
-                elif len(self.__wbuf) > 0:
-                    self.__log.warning('While stopping remote closed stream before consuming bytes.')
-                    self.__terminate(ReactorState.error, RemoteMutedError())
-                else:
-                    self.__log.info('Remote gracefully closed stream.')
-                    self.__terminate(ReactorState.stopped, None)
-            elif self.state is ReactorState.mute:
-                self.__log.info('Remote gracefully closed stream.')
-                self.__terminate(ReactorState.stopped, None)
-            else:
-                raise NotImplementedError(self.state)
+        elif self.state is ReactorState.mute:
+            self.__log.info('Remote gracefully closed stream.')
+            self.__terminate(ReactorState.stopped, None)
         else:
             raise NotImplementedError(self.state)
 
@@ -1314,7 +1302,7 @@ class Reactor:
 
         if self.state in (ReactorState.init, ReactorState.stopped, ReactorState.error):
             num_bytes_flushed = 0
-        elif self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
+        elif self.state in (ReactorState.connack, ReactorState.connected):
             num_bytes_flushed = self.__launch_preflight_packets()
         elif self.state is ReactorState.mute:
             num_bytes_flushed = 0
@@ -1407,7 +1395,7 @@ class Reactor:
         if self.state in ACTIVE_STATES:
             if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.handshake, ReactorState.connack):
                 on_disconnect_cb = self.on_connect_fail
-            elif self.state in (ReactorState.connected, ReactorState.stopping, ReactorState.mute):
+            elif self.state in (ReactorState.connected, ReactorState.mute):
                 on_disconnect_cb = self.on_disconnect
             else:
                 raise NotImplementedError(self.state)
@@ -1468,7 +1456,6 @@ class Reactor:
         assert self.state in (
             ReactorState.connack,
             ReactorState.connected,
-            ReactorState.stopping,
         )
 
         self.__preflight_queue.append(MqttPingreq())
@@ -1486,7 +1473,6 @@ class Reactor:
                 ReactorState.handshake,
                 ReactorState.connack,
                 ReactorState.connected,
-                ReactorState.stopping,
                 ReactorState.mute):
 
             msg = "More than abort period (%.01fs) has passed since last bytes received.  Aborting."
@@ -1519,7 +1505,7 @@ class Reactor:
                     self.__abort_socket_error(SocketError(e.errno))
             elif self.state is ReactorState.handshake:
                 self.__set_handshake()
-            elif self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
+            elif self.state in (ReactorState.connack, ReactorState.connected):
                 self.__launch_next_queued_packet()
             else:
                 raise NotImplementedError(self.state)

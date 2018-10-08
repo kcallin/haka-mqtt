@@ -292,25 +292,24 @@ class Reactor:
         assert isinstance(port, int)
 
         self.__log = logging.getLogger('haka')
-        self.__wbuf = bytearray()
-        self.__rbuf = bytearray()
+        self.__wbuf = bytearray()  #
+        self.__rbuf = bytearray()  #
 
-        self.__ssl_want_read = False
-        self.__ssl_want_write = False
+        self.__ssl_want_read = False  #
+        self.__ssl_want_write = False  #
 
         self.__client_id = properties.client_id
         self.__clock = properties.clock
         self.__keepalive_period = properties.keepalive_period
         self.__keepalive_due_deadline = None
         self.__keepalive_abort_deadline = None
-        self.__last_poll_instant = None
         self.__clean_session = properties.clean_session
         self.__name_resolver = properties.name_resolver
 
         self.__socket_factory = properties.socket_factory
         self.socket = None
         self.__host, self.__port = properties.endpoint
-        self.__enable = True
+        self.__enable = False
         self.__state = ReactorState.init
         self.__error = None
 
@@ -364,10 +363,6 @@ class Reactor:
         return self.__client_id
 
     @property
-    def last_poll_instant(self):
-        return self.__last_poll_instant
-
-    @property
     def keepalive_period(self):
         """float: If this period elapses without the client sending a
         control packet to the server then it will generate a pingreq
@@ -400,6 +395,12 @@ class Reactor:
 
     def __assert_state_rules(self):
         if self.state in INACTIVE_STATES:
+            assert self.__keepalive_due_deadline is None
+            assert self.__keepalive_abort_deadline is None
+
+        if self.state in (ReactorState.name_resolution,
+                          ReactorState.connecting,
+                          ReactorState.handshake):
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
 
@@ -495,9 +496,17 @@ class Reactor:
 
     def __start(self):
         assert self.state in INACTIVE_STATES
-        self.__error = None
+        assert self.enable is False
 
         self.__log.info('Starting.')
+
+        self.__enable = True
+        self.__error = None
+
+        self.__ssl_want_write = False
+        self.__ssl_want_read = False
+
+        self.__ping_active = False
 
         preflight_queue = []
         for p in self.__inflight_queue:
@@ -515,7 +524,7 @@ class Reactor:
                     if p.status is MqttPublishStatus.pubrec:
                         p._set_dupe()
                 else:
-                    raise NotImplementedError()
+                    raise NotImplementedError(p.qos)
                 preflight_queue.append(p)
 
         for p in self.__preflight_queue:
@@ -545,6 +554,14 @@ class Reactor:
                 self.__on_name_resolution(results)
 
     def __on_name_resolution(self, results):
+        """Called when hostname resolution is complete.
+
+        Parameters
+        ----------
+        results: 5-tuple
+            A 5-tuple of (family, socktype, proto, canonname, sockaddr).
+
+        """
         assert results is not None
 
         # TODO: Termination of async dns query.
@@ -563,17 +580,22 @@ class Reactor:
                         self.__log_name_resolution(result)
                     self.__connect(results[0])
                 else:
-                    raise NotImplementedError()
+                    raise NotImplementedError(len(results))
         else:
             self.__terminate(ReactorState.stopped, None)
 
     def __log_name_resolution(self, resolution, chosen=False):
-        family, socktype, proto, canonname, sockaddr = resolution
+        """Called when hostname resolution is complete.
 
-        family_str = {
-            socket.AF_INET: 'inet',
-            socket.AF_INET6: 'inet6',
-        }.get(family, str(family))
+        Parameters
+        ----------
+        resolution: 5-tuple
+            A 5-tuple of (family, socktype, proto, canonname, sockaddr).
+        chosen: bool
+            True if this log entry is to be marked as a chosen sockaddr
+            to connect to.
+        """
+        family, socktype, proto, canonname, sockaddr = resolution
 
         socktype_str = {
             socket.SOCK_DGRAM: 'sock_dgram',
@@ -635,11 +657,11 @@ class Reactor:
         if self.state in INACTIVE_STATES:
             self.__start()
         elif self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
-            self.__log.warning("Start called while already connecting to server; taking no additional action.")
+            self.__log.warning("Start while already connecting to server; taking no additional action.")
         elif self.state is ReactorState.connected:
-            self.__log.warning("Start called while already connected; taking no action.")
-        elif self.state is ReactorState.stopping:
-            self.__log.warning("Start called while stopping; stop process cannot be aborted.")
+            self.__log.warning("Start while already connected; taking no action.")
+        elif self.state is (ReactorState.stopping, ReactorState.mute):
+            self.__log.warning("Start while already stopping; stop process cannot be aborted.")
         else:
             raise NotImplementedError(self.state)
 
@@ -648,33 +670,48 @@ class Reactor:
     def stop(self):
         self.__assert_state_rules()
 
-        if self.enable:
-            self.__enable = False
-
-            if self.state is ReactorState.init:
-                self.__log.info('Stopped.')
-                self.__state = ReactorState.stopped
-            elif self.state is ReactorState.name_resolution:
+        if self.state is ReactorState.init:
+            assert self.enable is False
+            self.__log.info('Stopped.')
+            self.__state = ReactorState.stopped
+        elif self.state is ReactorState.name_resolution:
+            if self.enable:
                 # When resolution is complete
                 self.__log.info('Stopping.')
-            elif self.state is ReactorState.connecting:
-                self.__log.info('Stopping.')
-                self.__terminate(ReactorState.stopped, None)
-            elif self.state is ReactorState.handshake:
-                self.__log.info('Stopping.')
-            elif self.state in (ReactorState.connack, ReactorState.connected):
-                self.__log.info('Stopping.')
-                self.__preflight_queue.append(MqttDisconnect())
-            # elif self.state is ReactorState.mute:
-            #     self.__log.info('Stop.')
-            elif self.state is ReactorState.stopped:
-                self.__log.warning('Stop reqested while already stopped.')
-            elif self.state is ReactorState.error:
-                self.__log.warning('Stop requested while already in error.')
+                self.__enable = False
             else:
-                raise NotImplementedError(self.state)
+                self.__log.info('Stop request while already stopping.')
+        elif self.state is ReactorState.connecting:
+            if self.enable:
+                self.__log.info('Stopping.')
+                self.__enable = False
+                self.__terminate(ReactorState.stopped, None)
+            else:
+                self.__log.info('Stop request while already stopping.')
+        elif self.state is ReactorState.handshake:
+            if self.enable:
+                self.__log.info('Stopping.')
+                self.__enable = False
+                self.__terminate(ReactorState.stopped, None)
+            else:
+                self.__log.info('Stop request while already stopping.')
+        elif self.state in (ReactorState.connack, ReactorState.connected):
+            if self.enable:
+                self.__log.info('Stopping.')
+                self.__enable = False
+                self.__preflight_queue.append(MqttDisconnect())
+            else:
+                self.__log.info('Stop request while already stopping.')
+        # elif self.state is ReactorState.mute:
+        #     self.__log.info('Stop.')
+        elif self.state is ReactorState.stopped:
+            assert self.enable is False
+            self.__log.warning('Stop while already stopped.')
+        elif self.state is ReactorState.error:
+            assert self.enable is False
+            self.__log.warning('Stop while already in error.')
         else:
-            self.__log.info('Stop request while already stopping.')
+            raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
 
@@ -1119,7 +1156,6 @@ class Reactor:
         Parameters
         ----------
         pingresp: MqttPingresp
-
         """
         if self.state is ReactorState.connected:
             self.__log.info('Received %s.', repr(pingresp))
@@ -1134,14 +1170,12 @@ class Reactor:
             if self.state is ReactorState.stopping:
                 if len(self.__rbuf) > 0:
                     m = 'While stopping remote closed stream in the middle' \
-                        ' of a packet transmission with 0x%s still in the buffer.'
+                        ' of a packet (input buffer contains 0x%s).'
                     self.__log.warning(m, b2a_hex(self.__rbuf))
-                    # TODO: need reactor error.
-                    self.__terminate(ReactorState.stopped, None)
+                    self.__terminate(ReactorState.error, RemoteMutedError())
                 elif len(self.__wbuf) > 0:
                     self.__log.warning('While stopping remote closed stream before consuming bytes.')
-                    # TODO: need reactor error.
-                    self.__terminate(ReactorState.stopped, None)
+                    self.__terminate(ReactorState.error, RemoteMutedError())
                 else:
                     self.__log.info('Remote gracefully closed stream.')
                     self.__terminate(ReactorState.stopped, None)
@@ -1297,13 +1331,6 @@ class Reactor:
         connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
         self.__preflight_queue.insert(0, connect)
         self.__launch_next_queued_packet()
-        # self.__log.info('Launching message %s.', repr(connect))
-        # with BytesIO() as bio:
-        #     connect.encode(bio)
-        #     self.__wbuf.extend(bio.getvalue())
-        #
-        # num_bytes_flushed = self.__flush()
-        # self.__wbuf = self.__wbuf[num_bytes_flushed:]
 
     def __set_handshake(self):
         self.__state = ReactorState.handshake
@@ -1319,7 +1346,10 @@ class Reactor:
             self.__ssl_want_write = True
 
     def __on_connect(self):
+        """Called when a socket becomes connected; reactor must be in
+        the `ReactorState.connecting` state."""
         assert self.state == ReactorState.connecting
+
         self.__log.info('Connected.')
         self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
@@ -1372,6 +1402,8 @@ class Reactor:
         state: ReactorState
         error: ReactorError
         """
+
+        self.__enable = False
         if self.state in ACTIVE_STATES:
             if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
                 on_disconnect_cb = self.on_connect_fail

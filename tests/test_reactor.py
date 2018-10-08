@@ -1224,7 +1224,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
 class TestReactorStop(TestReactor, unittest.TestCase):
     def test_init(self):
         self.assertEqual(ReactorState.init, self.reactor.state)
-        self.assertTrue(self.reactor.enable)
+        self.assertFalse(self.reactor.enable)
         self.reactor.stop()
         self.assertFalse(self.reactor.enable)
         self.assertEqual(ReactorState.stopped, self.reactor.state)

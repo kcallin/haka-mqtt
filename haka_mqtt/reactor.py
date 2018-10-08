@@ -103,14 +103,15 @@ class ReactorState(IntEnum):
 
     """
     init = 0
-    name_resolution = 8
-    connecting = 1
-    handshake = 2
-    connack = 3
-    connected = 4
-    stopping = 5
-    stopped = 6
-    error = 7
+    name_resolution = 1
+    connecting = 2
+    handshake = 3
+    connack = 4
+    connected = 5
+    stopping = 6
+    mute = 7
+    stopped = 8
+    error = 9
 
 
 # States where there are no active deadlines, the socket is closed and there
@@ -126,7 +127,8 @@ ACTIVE_STATES = (
     ReactorState.handshake,
     ReactorState.connack,
     ReactorState.connected,
-    ReactorState.stopping
+    ReactorState.stopping,
+    ReactorState.mute,
 )
 
 
@@ -160,6 +162,14 @@ def index(l, predicate):
 
 
 class ReactorError(object):
+    pass
+
+
+class ReactorError(object):
+    pass
+
+
+class RemoteMutedError(ReactorError):
     pass
 
 
@@ -304,6 +314,7 @@ class Reactor:
         self.__socket_factory = properties.socket_factory
         self.socket = None
         self.__host, self.__port = properties.endpoint
+        self.__enable = True
         self.__state = ReactorState.init
         self.__error = None
 
@@ -386,10 +397,18 @@ class Reactor:
         """ReactorState: Current reactor state."""
         return self.__state
 
+    @property
+    def enable(self):
+        """bool: True when enabled; False disabled."""
+        return self.__enable
+
     def __assert_state_rules(self):
         if self.state in INACTIVE_STATES:
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
+
+        if self.state is ReactorState.mute:
+            assert self.__keepalive_due_deadline is None
 
         if self.state is ReactorState.error:
             assert self.error is not None
@@ -532,21 +551,25 @@ class Reactor:
     def __on_name_resolution(self, results):
         assert results is not None
 
-        if isinstance(results, socket.gaierror):
-            e = results
-            self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
-            self.__abort(AddressReactorError(e))
-        else:
-            if len(results) == 0:
-                self.__log.error('No hostname entries found.  Aborting.')
-                self.__abort(AddressReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
-            elif len(results) > 0:
-                self.__log_name_resolution(results[0], chosen=True)
-                for result in results[1:]:
-                    self.__log_name_resolution(result)
-                self.__connect(results[0])
+        # TODO: Termination of async dns query.
+        if self.enable:
+            if isinstance(results, socket.gaierror):
+                e = results
+                self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
+                self.__abort(AddressReactorError(e))
             else:
-                raise NotImplementedError()
+                if len(results) == 0:
+                    self.__log.error('No hostname entries found.  Aborting.')
+                    self.__abort(AddressReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
+                elif len(results) > 0:
+                    self.__log_name_resolution(results[0], chosen=True)
+                    for result in results[1:]:
+                        self.__log_name_resolution(result)
+                    self.__connect(results[0])
+                else:
+                    raise NotImplementedError()
+        else:
+            self.__terminate(ReactorState.stopped, None)
 
     def __log_name_resolution(self, resolution, chosen=False):
         family, socktype, proto, canonname, sockaddr = resolution
@@ -628,21 +651,34 @@ class Reactor:
 
     def stop(self):
         self.__assert_state_rules()
-        if self.state is ReactorState.connected:
-            self.__log.info('Stopping.')
-            # TODO: Disconnect method must be flushed!
-            self.__preflight_queue.append(MqttDisconnect())
 
-            if not self.__wbuf:
-                self.__log.info('Shutting down outgoing stream.')
-                self.socket.shutdown(socket.SHUT_WR)
+        if self.enable:
+            self.__enable = False
 
-                # Stop keepalive messages.
-                # TODO: What if remote socket takes forever to close?
-
-            self.__state = ReactorState.stopping
+            if self.state is ReactorState.init:
+                self.__log.info('Stopped.')
+                self.__state = ReactorState.stopped
+            elif self.state is ReactorState.name_resolution:
+                # When resolution is complete
+                self.__log.info('Stopping.')
+            elif self.state is ReactorState.connecting:
+                self.__log.info('Stopping.')
+                self.__terminate(ReactorState.stopped, None)
+            elif self.state is ReactorState.handshake:
+                self.__log.info('Stopping.')
+            elif self.state in (ReactorState.connack, ReactorState.connected):
+                self.__log.info('Stopping.')
+                self.__preflight_queue.append(MqttDisconnect())
+            # elif self.state is ReactorState.mute:
+            #     self.__log.info('Stop.')
+            elif self.state is ReactorState.stopped:
+                self.__log.warning('Stop reqested while already stopped.')
+            elif self.state is ReactorState.error:
+                self.__log.warning('Stop requested while already in error.')
+            else:
+                raise NotImplementedError(self.state)
         else:
-            raise NotImplementedError(self.state)
+            self.__log.info('Stop request while already stopping.')
 
         self.__assert_state_rules()
 
@@ -722,14 +758,15 @@ class Reactor:
     def __on_recv_bytes(self, new_bytes):
         assert len(new_bytes) > 0
 
-        if self.__keepalive_due_deadline is not None:
-            self.__keepalive_due_deadline.cancel()
-            self.__keepalive_due_deadline = None
-        self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
+        if self.state is not ReactorState.mute:
+            if self.__keepalive_due_deadline is not None:
+                self.__keepalive_due_deadline.cancel()
+                self.__keepalive_due_deadline = None
+            self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
-        self.__keepalive_abort_deadline.cancel()
-        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
-                                                               self.__keepalive_abort_timeout)
+            self.__keepalive_abort_deadline.cancel()
+            self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
+                                                                   self.__keepalive_abort_timeout)
 
         self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
@@ -811,14 +848,24 @@ class Reactor:
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
-        if connack.session_present and self.clean_session:
-            # [MQTT-3.2.2-1]
-            self.__abort_protocol_violation('Server indicates a session is present when none was requested.')
-        else:
-            if self.on_connack is not None:
-                self.on_connack(self, connack)
+        if self.state in (ReactorState.connack, ReactorState.stopping, ReactorState.mute):
+            if connack.session_present and self.clean_session:
+                # [MQTT-3.2.2-1]
+                self.__abort_protocol_violation('Server indicates a session is present when none was requested.')
+            else:
+                if self.state is ReactorState.connack:
+                    self.__state = ReactorState.connected
+                elif self.state in (ReactorState.stopping, ReactorState.mute):
+                    pass
+                else:
+                    raise NotImplementedError(self.state)
 
-            self.__launch_next_queued_packet()
+                if self.on_connack is not None:
+                    self.on_connack(self, connack)
+
+                self.__launch_next_queued_packet()
+        else:
+            raise NotImplementedError(self.state)
 
     def __on_connack(self, connack):
         """Called once when a connack packet is received.
@@ -827,9 +874,8 @@ class Reactor:
         ----------
         connack: MqttConnack
         """
-        if self.state is ReactorState.connack:
+        if self.state in (ReactorState.connack, ReactorState.stopping, ReactorState.mute):
             self.__log.info('Received %s.', repr(connack))
-            self.__state = ReactorState.connected
 
             if connack.return_code == ConnackResult.accepted:
                 # The first packet sent from the Server to the Client MUST
@@ -936,14 +982,14 @@ class Reactor:
         puback: MqttPuback
 
         """
-        if self.state is ReactorState.connected:
+        if self.state in (ReactorState.connected, ReactorState.stopping, ReactorState.mute):
             idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
             if idx is None:
                 publish = None
             else:
                 publish = self.__inflight_queue[idx]
 
-            in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue]
+            in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue if hasattr(p, 'packet_id')]
             if publish and publish.packet_id == puback.packet_id:
                 if publish.qos == 1:
                     del self.__inflight_queue[idx]
@@ -1087,27 +1133,27 @@ class Reactor:
     def __on_muted_remote(self):
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
-            self.__abort(ReactorError('Remote closed unexpectedly.'))
-        elif self.state in (ReactorState.stopping,):
-            if len(self.__rbuf) > 0:
-                m = 'While stopping remote closed stream in the middle' \
-                    ' of a packet transmission with 0x%s still in the buffer.'
-                self.__log.warning(m, b2a_hex(self.__rbuf))
-            elif len(self.__wbuf) > 0:
-                self.__log.warning('While stopping remote closed stream before consuming bytes.')
-            else:
+            self.__abort(RemoteMutedError())
+        elif self.state in (ReactorState.stopping, ReactorState.mute):
+            if self.state is ReactorState.stopping:
+                if len(self.__rbuf) > 0:
+                    m = 'While stopping remote closed stream in the middle' \
+                        ' of a packet transmission with 0x%s still in the buffer.'
+                    self.__log.warning(m, b2a_hex(self.__rbuf))
+                    # TODO: need reactor error.
+                    self.__terminate(ReactorState.stopped, None)
+                elif len(self.__wbuf) > 0:
+                    self.__log.warning('While stopping remote closed stream before consuming bytes.')
+                    # TODO: need reactor error.
+                    self.__terminate(ReactorState.stopped, None)
+                else:
+                    self.__log.info('Remote gracefully closed stream.')
+                    self.__terminate(ReactorState.stopped, None)
+            elif self.state is ReactorState.mute:
                 self.__log.info('Remote gracefully closed stream.')
-
-            if self.__keepalive_due_deadline is not None:
-                self.__keepalive_due_deadline.cancel()
-                self.__keepalive_due_deadline = None
-
-            if self.__keepalive_abort_deadline is not None:
-                self.__keepalive_abort_deadline.cancel()
-                self.__keepalive_abort_deadline = None
-
-            self.socket.close()
-            self.__state = ReactorState.stopped
+                self.__terminate(ReactorState.stopped, None)
+            else:
+                raise NotImplementedError(self.state)
         else:
             raise NotImplementedError(self.state)
 
@@ -1205,8 +1251,16 @@ class Reactor:
             #     pass
             # elif packet.packet_type is MqttControlPacketType.pingresp:
             #     pass
-            # elif packet.packet_type is MqttControlPacketType.disconnect:
-            #     pass
+            elif packet.packet_type is MqttControlPacketType.disconnect:
+                assert self.enable is False
+                self.__log.info('Shutting down outgoing stream.')
+                self.__inflight_queue.append(packet_record)
+                self.socket.shutdown(socket.SHUT_WR)
+                self.__state = ReactorState.mute
+                self.__keepalive_due_deadline.cancel()
+                self.__keepalive_due_deadline = None
+                # TODO: Stop keepalive messages?
+                # TODO: What if remote takes forever to close?
 
         if num_bytes_flushed:
             self.__log.debug('Wrote %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))
@@ -1227,34 +1281,33 @@ class Reactor:
             Returns number of bytes flushed to output buffers.
         """
 
-        if self.state in (ReactorState.init, ReactorState.stopped):
+        if self.state in (ReactorState.init, ReactorState.stopped, ReactorState.error):
             num_bytes_flushed = 0
-        elif self.state in (ReactorState.connack,):
-            num_bytes_flushed = self.__flush()
-            self.__wbuf = self.__wbuf[num_bytes_flushed:]
-        elif self.state in (ReactorState.connected, ReactorState.stopping):
+        elif self.state in (ReactorState.connack, ReactorState.connected, ReactorState.stopping):
             num_bytes_flushed = self.__launch_preflight_packets()
+        elif self.state is ReactorState.mute:
+            num_bytes_flushed = 0
         else:
             raise NotImplementedError(self.state)
 
         return num_bytes_flushed
 
-    def __on_handshake(self):
-        pass
-
     def __set_connack(self):
-        self.__state = ReactorState.connack
-
+        assert not self.__inflight_queue
         assert not self.__wbuf
 
-        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
-        self.__log.info('Launching message %s.', repr(connect))
-        with BytesIO() as bio:
-            connect.encode(bio)
-            self.__wbuf.extend(bio.getvalue())
+        self.__state = ReactorState.connack
 
-        num_bytes_flushed = self.__flush()
-        self.__wbuf = self.__wbuf[num_bytes_flushed:]
+        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
+        self.__preflight_queue.insert(0, connect)
+        self.__launch_next_queued_packet()
+        # self.__log.info('Launching message %s.', repr(connect))
+        # with BytesIO() as bio:
+        #     connect.encode(bio)
+        #     self.__wbuf.extend(bio.getvalue())
+        #
+        # num_bytes_flushed = self.__flush()
+        # self.__wbuf = self.__wbuf[num_bytes_flushed:]
 
     def __set_handshake(self):
         self.__state = ReactorState.handshake
@@ -1326,7 +1379,7 @@ class Reactor:
         if self.state in ACTIVE_STATES:
             if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
                 on_disconnect_cb = self.on_connect_fail
-            elif self.state in (ReactorState.connected, ReactorState.stopping):
+            elif self.state in (ReactorState.connected, ReactorState.stopping, ReactorState.mute):
                 on_disconnect_cb = self.on_disconnect
             else:
                 raise NotImplementedError(self.state)

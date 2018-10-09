@@ -15,4 +15,5 @@ decoding MQTT 3.1.1 packets.
    receive_path
    subscribe_path
    stop
+   terminate
    build_doc

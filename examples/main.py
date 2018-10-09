@@ -46,6 +46,7 @@ class MqttClient():
 
     def __on_disconnect(self, reactor):
         print('disconnect', repr(reactor.error))
+        self.__reconnect_deadline = self.__scheduler.add(30., self.__reconnect_timeout)
 
     def __on_connect_fail(self, reactor):
         assert self.__reconnect_deadline is None
@@ -67,8 +68,9 @@ class MqttClient():
         p: MqttSuback
         """
 
-        publish = self.__reactor.publish(TOPIC, str(count), 1)
-        self.__publish_queue.append(publish)
+        if len(self.__publish_queue) == len(self.__puback_queue):
+            publish = self.__reactor.publish(TOPIC, str(count), 1)
+            self.__publish_queue.append(publish)
 
     def __on_puback(self, reactor, p):
         """
@@ -80,17 +82,22 @@ class MqttClient():
         """
 
         assert p.packet_type is MqttControlPacketType.puback
-        assert p.packet_id == self.__publish_queue[-1].packet_id
+        assert p.packet_id == self.__publish_queue[-1].packet_id, (p.packet_id, self.__publish_queue[-1].packet_id)
+
+        self.__puback_queue.append(p)
 
         if len(self.__publish_queue) % 2 == 0:
-            publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
-            self.__publish_queue.append(publish)
+            if len(self.__publish_queue) == len(self.__puback_queue):
+                publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
+                self.__publish_queue.append(publish)
         else:
             self.__pub_deadline = self.__scheduler.add(30., self.__on_pub_timeout)
 
     def __on_pub_timeout(self):
-        publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
-        self.__publish_queue.append(publish)
+        if len(self.__publish_queue) == len(self.__puback_queue):
+            publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
+            self.__publish_queue.append(publish)
+
         self.__pub_deadline.cancel()
         self.__pub_deadline = None
 

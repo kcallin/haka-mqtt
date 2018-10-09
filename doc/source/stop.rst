@@ -32,11 +32,16 @@ further effect.
 Subscribe/Unsubscribe
 ======================
 
-While in the ``stopping`` or ``mute`` states subscribe and unsubscribe
-calls have no effect.  Any packets for subscribe and unsubscribe calls
-that are already in the pre-flight queue) will be launched and
-callbacks to ``on_suback`` and ``on_unsuback`` will only be made for
-any received acks.
+Calls made to subscribe/unsubscribe made prior to a ``stop`` call will
+have their associated packets delivered to the server before the reactor
+enters its ``mute`` state.  Callbacks to ``on_suback`` and
+``on_unsuback`` will only be made for whatever acks are received prior
+to the reactor entering a final state.  Calls to subscribe/unsubscribe
+made after a ``stop`` call place packets on the preflight queue but
+these packets will not be delivered before the reactor enters ``mute``
+state and the packets will eventually be discarded if the reactor is
+restarted after entering a final state.
+
 
 
 Publish

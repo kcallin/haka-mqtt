@@ -485,7 +485,7 @@ class Reactor:
         payload: bytes
         qos: int
             0 <= qos <= 2
-        retain: False
+        retain: bool
 
         Return
         -------

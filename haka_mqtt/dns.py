@@ -35,7 +35,6 @@ def getaddrinfo_enqueue(queue, wd, request_id, params):
             raise NotImplementedError(num_bytes_written)
 
 
-
 class AsyncDnsResolver(object):
     def __init__(self, enqueue=getaddrinfo_enqueue):
         self.__queue = Queue()

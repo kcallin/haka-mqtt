@@ -63,10 +63,10 @@ class ReactorProperties(object):
         buffers on disconnect without regard to QoS; otherwise
         unacknowledged messages will be retransmitted after a
         re-connect.
-    max_inflight_publish: int
-        Maximum number of in-flight publish messages.
     name_resolver: callable
         DNS resolver.
+    username: str optional
+    password: str optional
     """
     def __init__(self):
         self.socket_factory = None
@@ -76,8 +76,9 @@ class ReactorProperties(object):
         self.keepalive_period = 10*60
         self.scheduler = None
         self.clean_session = True
-        self.max_inflight_publish = 1
         self.name_resolver = None
+        self.username = None
+        self.password = None
 
 
 @unique
@@ -299,6 +300,9 @@ class Reactor:
         self.__ssl_want_write = False  #
 
         self.__client_id = properties.client_id
+        self.__username = properties.username
+        self.__password = properties.password
+
         self.__clock = properties.clock
         self.__keepalive_period = properties.keepalive_period
         self.__keepalive_due_deadline = None
@@ -394,6 +398,9 @@ class Reactor:
         return self.__enable
 
     def __assert_state_rules(self):
+        if self.want_write() or self.want_read():
+            assert self.socket is not None
+
         if self.state in INACTIVE_STATES:
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
@@ -1317,7 +1324,9 @@ class Reactor:
 
         self.__state = ReactorState.connack
 
-        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period)
+        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period,
+                              username=self.__username,
+                              password=self.__password)
         self.__preflight_queue.insert(0, connect)
         self.__launch_next_queued_packet()
 

@@ -277,6 +277,21 @@ class Reactor:
        <--pubrec(1)---
 
     send_queue
+
+    Attributes
+    -----------
+    on_want_read: callable
+    on_want_write: callable
+    on_connect_fail: callable
+    on_disconnect: callable
+    on_connack: callable
+    on_pubrec: callable
+    on_pubcomp: callable
+    on_suback: callable
+    on_publish: callable
+    on_puback: callable
+    on_pubrel: callable
+
     """
     def __init__(self, properties):
         assert properties.client_id is not None

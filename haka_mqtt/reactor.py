@@ -162,17 +162,17 @@ def index(l, predicate):
     return rv
 
 
-class ReactorError(object):
+class ReactorFail(object):
     pass
 
 
-class RemoteMutedError(ReactorError):
+class MutePeerReactorFail(ReactorFail):
     """Error that occurs when the server closes its write stream
     unexpectedly."""
     pass
 
 
-class MqttConnectFail(ReactorError):
+class ConnectReactorFail(ReactorFail):
     """Error that occurs when the server sends a connack fail in
     response to an initial connect packet."""
     def __init__(self, result):
@@ -188,16 +188,16 @@ class MqttConnectFail(ReactorError):
         return hasattr(other, 'result') and self.result == other.result
 
 
-class KeepaliveTimeoutReactorError(ReactorError):
+class KeepaliveTimeoutReactorFail(ReactorFail):
     """Server fails to respond in a timely fashion."""
     def __eq__(self, other):
-        return isinstance(other, KeepaliveTimeoutReactorError)
+        return isinstance(other, KeepaliveTimeoutReactorFail)
 
     def __repr__(self):
         return '{}()'.format(self.__class__.__name__)
 
 
-class SocketError(ReactorError):
+class SocketReactorFail(ReactorFail):
     """A socket call failed.
 
     Parameters
@@ -221,7 +221,7 @@ class SocketError(ReactorError):
         return self.errno == other.errno
 
 
-class AddressReactorError(ReactorError):
+class AddressReactorFail(ReactorFail):
     """Failed to lookup a valid address.
 
     Parameters
@@ -250,14 +250,14 @@ class AddressReactorError(ReactorError):
         )
 
 
-class DecodeReactorError(ReactorError):
+class DecodeReactorFail(ReactorFail):
     """Server wrote a sequence of bytes that could not be interpreted as
     an MQTT packet."""
     def __init__(self, description):
         self.description = description
 
 
-class ProtocolViolationError(ReactorError):
+class ProtocolReactorFail(ReactorFail):
     """Server send an inappropriate MQTT packet to the client."""
     def __init__(self, description):
         self.description = description
@@ -337,6 +337,13 @@ class Reactor:
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
+        # Want read
+        self.__want_read = False
+        self.__want_write = False
+
+        self.on_want_read = None
+        self.on_want_write = None
+
         # Connection Callbacks
         self.on_connect_fail = None
         self.on_disconnect = None
@@ -397,6 +404,19 @@ class Reactor:
         """bool: True when enabled; False disabled."""
         return self.__enable
 
+    def __want_rw_update(self):
+        if self.__want_write != self.want_write():
+            self.__want_write = self.want_write()
+
+            if self.on_want_write is not None:
+                self.on_want_write(self)
+
+        if self.__want_read != self.want_read():
+            self.__want_read = self.want_read()
+
+            if self.on_want_read is not None:
+                self.on_want_read(self)
+
     def __assert_state_rules(self):
         if self.want_write() or self.want_read():
             assert self.socket is not None
@@ -444,7 +464,7 @@ class Reactor:
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
-
+        self.__want_rw_update()
         return req
 
     def __acquire_packet_id(self):
@@ -471,7 +491,7 @@ class Reactor:
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
-
+        self.__want_rw_update()
         return req
 
     def publish(self, topic, payload, qos, retain=False):
@@ -497,7 +517,7 @@ class Reactor:
         req = MqttPublishTicket(self.__acquire_packet_id(), topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
-
+        self.__want_rw_update()
         return req
 
     def __start(self):
@@ -575,11 +595,11 @@ class Reactor:
             if isinstance(results, socket.gaierror):
                 e = results
                 self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
-                self.__abort(AddressReactorError(e))
+                self.__abort(AddressReactorFail(e))
             else:
                 if len(results) == 0:
                     self.__log.error('No hostname entries found.  Aborting.')
-                    self.__abort(AddressReactorError(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
+                    self.__abort(AddressReactorFail(socket.gaierror(socket.EAI_NONAME, 'Name or service not known')))
                 elif len(results) > 0:
                     self.__log_name_resolution(results[0], chosen=True)
                     for result in results[1:]:
@@ -647,7 +667,7 @@ class Reactor:
                 # Connection in progress.
                 self.__log.info("Connecting.")
             else:
-                self.__abort_socket_error(SocketError(e.errno))
+                self.__abort_socket_error(SocketReactorFail(e.errno))
         else:
             self.__on_connect()
 
@@ -672,6 +692,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
+        self.__want_rw_update()
 
     def stop(self):
         self.__assert_state_rules()
@@ -720,6 +741,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
+        self.__want_rw_update()
 
     def terminate(self):
         """When in an active state immediately shuts down any socket
@@ -742,6 +764,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
+        self.__want_rw_update()
 
     def want_read(self):
         """True if the reactor is ready to process incoming socket data;
@@ -833,7 +856,7 @@ class Reactor:
                 else:
                     m = 'Received unsupported message type {}.'.format(header.packet_type)
                     self.__log.error(m)
-                    self.__abort(DecodeReactorError(m))
+                    self.__abort(DecodeReactorFail(m))
 
     def read(self):
         """Calls recv on underlying socket exactly once and returns the
@@ -871,7 +894,7 @@ class Reactor:
                     pass
                 except DecodeError as e:
                     self.__log.error('Error decoding message (%s)', str(e))
-                    self.__abort(DecodeReactorError(str(e)))
+                    self.__abort(DecodeReactorFail(str(e)))
                 except ssl.SSLWantWriteError:
                     self.__ssl_want_write = True
                 except ssl.SSLWantReadError:
@@ -881,9 +904,10 @@ class Reactor:
                         # No write space ready.
                         pass
                     else:
-                        self.__abort_socket_error(SocketError(e.errno))
+                        self.__abort_socket_error(SocketReactorFail(e.errno))
 
         self.__assert_state_rules()
+        self.__want_rw_update()
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
@@ -924,19 +948,19 @@ class Reactor:
                 self.__on_connack_accepted(connack)
             elif connack.return_code == ConnackResult.fail_bad_protocol_version:
                 self.__log.error('Connect failed: bad protocol version.')
-                self.__abort(MqttConnectFail(connack.return_code))
+                self.__abort(ConnectReactorFail(connack.return_code))
             elif connack.return_code == ConnackResult.fail_bad_client_id:
                 self.__log.error('Connect failed: bad client ID.')
-                self.__abort(MqttConnectFail(connack.return_code))
+                self.__abort(ConnectReactorFail(connack.return_code))
             elif connack.return_code == ConnackResult.fail_server_unavailable:
                 self.__log.error('Connect failed: server unavailable.')
-                self.__abort(MqttConnectFail(connack.return_code))
+                self.__abort(ConnectReactorFail(connack.return_code))
             elif connack.return_code == ConnackResult.fail_bad_username_or_password:
                 self.__log.error('Connect failed: bad username or password.')
-                self.__abort(MqttConnectFail(connack.return_code))
+                self.__abort(ConnectReactorFail(connack.return_code))
             elif connack.return_code == ConnackResult.fail_not_authorized:
                 self.__log.error('Connect failed: not authorized.')
-                self.__abort(MqttConnectFail(connack.return_code))
+                self.__abort(ConnectReactorFail(connack.return_code))
             else:
                 raise NotImplementedError(connack.return_code)
         elif self.state is ReactorState.connected:
@@ -1174,7 +1198,7 @@ class Reactor:
     def __on_muted_remote(self):
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
-            self.__abort(RemoteMutedError())
+            self.__abort(MutePeerReactorFail())
         elif self.state is ReactorState.mute:
             self.__log.info('Remote gracefully closed stream.')
             self.__terminate(ReactorState.stopped, None)
@@ -1385,9 +1409,9 @@ class Reactor:
                     self.__log.error("Remote unexpectedly closed the connection (<%s: %d>); Aborting.",
                                      errno.errorcode[e.errno],
                                      e.errno)
-                    self.__abort(SocketError(e.errno))
+                    self.__abort(SocketReactorFail(e.errno))
                 else:
-                    self.__abort_socket_error(SocketError(e.errno))
+                    self.__abort_socket_error(SocketReactorFail(e.errno))
 
         return num_bytes_written
 
@@ -1397,7 +1421,7 @@ class Reactor:
         Parameters
         ----------
         state: ReactorState
-        error: ReactorError
+        error: ReactorFail
         """
 
         self.__enable = False
@@ -1443,7 +1467,7 @@ class Reactor:
 
         Parameters
         ----------
-        se: SocketError
+        se: SocketReactorFail
         """
         self.__log.error('%s (<%s: %d>).  Aborting.',
                          os.strerror(se.errno),
@@ -1453,7 +1477,7 @@ class Reactor:
 
     def __abort_protocol_violation(self, m, *params):
         self.__log.error(m, *params)
-        self.__abort(ProtocolViolationError(m % params))
+        self.__abort(ProtocolReactorFail(m % params))
 
     def __abort(self, e):
         self.__terminate(ReactorState.error, e)
@@ -1471,6 +1495,7 @@ class Reactor:
         self.__keepalive_due_deadline = None
 
         self.__assert_state_rules()
+        self.__want_rw_update()
 
     def __keepalive_abort_timeout(self):
         self.__assert_state_rules()
@@ -1491,9 +1516,10 @@ class Reactor:
 
         self.__keepalive_abort_deadline = None
 
-        self.__abort(KeepaliveTimeoutReactorError())
+        self.__abort(KeepaliveTimeoutReactorFail())
 
         self.__assert_state_rules()
+        self.__want_rw_update()
 
     def write(self):
         """If there is any data queued to be written to the underlying
@@ -1511,7 +1537,7 @@ class Reactor:
                 elif errno.EINPROGRESS:
                     pass
                 else:
-                    self.__abort_socket_error(SocketError(e.errno))
+                    self.__abort_socket_error(SocketReactorFail(e.errno))
             elif self.state is ReactorState.handshake:
                 self.__set_handshake()
             elif self.state in (ReactorState.connack, ReactorState.connected):
@@ -1524,3 +1550,4 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
+        self.__want_rw_update()

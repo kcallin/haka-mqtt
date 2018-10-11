@@ -37,8 +37,8 @@ from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
     ReactorState,
-    KeepaliveTimeoutReactorError,
-    MqttConnectFail, INACTIVE_STATES, SocketError, AddressReactorError, DecodeReactorError)
+    KeepaliveTimeoutReactorFail,
+    ConnectReactorFail, INACTIVE_STATES, SocketReactorFail, AddressReactorFail, DecodeReactorFail)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -400,7 +400,7 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
-        self.assertEqual(AddressReactorError(e), self.reactor.error)
+        self.assertEqual(AddressReactorFail(e), self.reactor.error)
 
     def test_sync_getaddrinfo_fail_nohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
@@ -411,7 +411,7 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.on_connect_fail.assert_called_once()
 
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
-        self.assertEqual(AddressReactorError(e), self.reactor.error)
+        self.assertEqual(AddressReactorFail(e), self.reactor.error)
 
     def test_async_getaddrinfo_fail_enohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
@@ -431,7 +431,7 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.on_connect_fail.assert_called_once_with(self.reactor)
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertEqual(AddressReactorError(e), self.reactor.error)
+        self.assertEqual(AddressReactorFail(e), self.reactor.error)
 
 
 class TestConnect(TestReactor, unittest.TestCase):
@@ -454,7 +454,7 @@ class TestConnect(TestReactor, unittest.TestCase):
         self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertEqual(SocketError(e), self.reactor.error)
+        self.assertEqual(SocketReactorFail(e), self.reactor.error)
 
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
@@ -541,7 +541,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         connect = MqttConnect('client', False, 0)
         self.recv_packet_then_ewouldblock(connect)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, DecodeReactorError))
+        self.assertTrue(isinstance(self.reactor.error, DecodeReactorFail))
 
 
 class TestConnackFail(TestReactor, unittest.TestCase):
@@ -559,7 +559,7 @@ class TestConnackFail(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.keepalive_period * 0.5)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorError())
+        self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorFail())
 
     def test_connack_unexpected_session_present(self):
         self.start_to_connect()
@@ -579,7 +579,7 @@ class TestConnackFail(TestReactor, unittest.TestCase):
             connack = MqttConnack(False, fail_code)
             self.recv_packet_then_ewouldblock(connack)
             self.assertEqual(self.reactor.state, ReactorState.error)
-            self.assertEqual(self.reactor.error, MqttConnectFail(fail_code))
+            self.assertEqual(self.reactor.error, ConnectReactorFail(fail_code))
 
 
 class TestSubscribePath(TestReactor, unittest.TestCase):
@@ -1049,7 +1049,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.reactor.write()
         self.assertEqual(pub_status, actual_publish)
         self.assertEqual(self.reactor.state, ReactorState.error)
-        self.assertEqual(self.reactor.error, SocketError(se.errno))
+        self.assertEqual(self.reactor.error, SocketReactorFail(se.errno))
         self.socket.send.reset_mock()
 
         self.start_to_connect(preflight_queue=[publish])
@@ -1099,7 +1099,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
 
         self.assertEqual(self.reactor.state, ReactorState.error)
-        self.assertEqual(self.reactor.error, SocketError(se.errno))
+        self.assertEqual(self.reactor.error, SocketReactorFail(se.errno))
 
         self.start_to_connect(preflight_queue=[pubrel])
 
@@ -1267,7 +1267,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.on_connect_fail.assert_called_once_with(self.reactor)
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertEqual(AddressReactorError(e), self.reactor.error)
+        self.assertEqual(AddressReactorFail(e), self.reactor.error)
 
         # Verify that stop has no effect.
         self.reactor.stop()
@@ -1397,7 +1397,7 @@ class TestPingresp(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_connack(self):
         # Start with async connect
@@ -1405,14 +1405,14 @@ class TestPingresp(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_connected(self):
         self.start_to_connack()
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_stopping(self):
         self.start_to_connack()
@@ -1422,7 +1422,7 @@ class TestPingresp(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_mute(self):
         self.start_to_connack()
@@ -1435,4 +1435,4 @@ class TestPingresp(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))

@@ -13,6 +13,7 @@ from enum import (
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.cycle_iter import IntegralCycleIter
+from haka_mqtt.selector import Selector
 from mqtt_codec.io import (
     UnderflowDecodeError,
     DecodeError,
@@ -67,6 +68,7 @@ class ReactorProperties(object):
         DNS resolver.
     username: str optional
     password: str optional
+    selector: Selector
     """
     def __init__(self):
         self.socket_factory = None
@@ -79,6 +81,7 @@ class ReactorProperties(object):
         self.name_resolver = None
         self.username = None
         self.password = None
+        self.selector = Selector()
 
 
 @unique
@@ -263,6 +266,44 @@ class ProtocolReactorFail(ReactorFail):
         self.description = description
 
 
+class _AssertSelectAdapter(object):
+    def __init__(self, reactor, selector):
+        self.__sock = None
+        self.__reactor = reactor
+        self.__selector = selector
+        self.__want_read = False
+        self.__want_write = False
+
+    def assert_closed(self):
+        assert self.__want_read is False
+        assert self.__want_write is False
+
+    def update(self, want_read, want_write, f):
+        if self.__sock is not f:
+            # Not permitted to switch to another file while signed up
+            # for an existing read notification.
+            self.assert_closed()
+            self.__sock = f
+
+        if self.__want_write != want_write:
+            # There has been a change in want write.
+            self.__want_write = want_write
+
+            if want_write:
+                self.__selector.add_write(f, self.__reactor)
+            else:
+                self.__selector.del_write(f, self.__reactor)
+
+        if self.__want_read != want_read:
+            # There has been a change in want read.
+            self.__want_read = want_read
+
+            if want_read:
+                self.__selector.add_read(f, self.__reactor)
+            else:
+                self.__selector.del_read(f, self.__reactor)
+
+
 class Reactor:
     """
     Parameters
@@ -280,8 +321,6 @@ class Reactor:
 
     Attributes
     -----------
-    on_want_read: callable
-    on_want_write: callable
     on_connect_fail: callable
     on_disconnect: callable
     on_connack: callable
@@ -306,6 +345,7 @@ class Reactor:
         assert isinstance(host, str)
         assert 0 <= port <= 2**16-1
         assert isinstance(port, int)
+        assert properties.selector is not None
 
         self.__log = logging.getLogger('haka')
         self.__wbuf = bytearray()  #
@@ -353,11 +393,7 @@ class Reactor:
         self.__scheduler = properties.scheduler
 
         # Want read
-        self.__want_read = False
-        self.__want_write = False
-
-        self.on_want_read = None
-        self.on_want_write = None
+        self.__selector = _AssertSelectAdapter(self, properties.selector)
 
         # Connection Callbacks
         self.on_connect_fail = None
@@ -419,18 +455,8 @@ class Reactor:
         """bool: True when enabled; False disabled."""
         return self.__enable
 
-    def __want_rw_update(self):
-        if self.__want_write != self.want_write():
-            self.__want_write = self.want_write()
-
-            if self.on_want_write is not None:
-                self.on_want_write(self)
-
-        if self.__want_read != self.want_read():
-            self.__want_read = self.want_read()
-
-            if self.on_want_read is not None:
-                self.on_want_read(self)
+    def __update_io_notification(self):
+        self.__selector.update(self.want_read(), self.want_write(), self.socket)
 
     def __assert_state_rules(self):
         if self.want_write() or self.want_read():
@@ -479,7 +505,7 @@ class Reactor:
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
         return req
 
     def __acquire_packet_id(self):
@@ -506,7 +532,7 @@ class Reactor:
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
         return req
 
     def publish(self, topic, payload, qos, retain=False):
@@ -532,7 +558,7 @@ class Reactor:
         req = MqttPublishTicket(self.__acquire_packet_id(), topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
         return req
 
     def __start(self):
@@ -707,7 +733,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
 
     def stop(self):
         self.__assert_state_rules()
@@ -756,7 +782,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
 
     def terminate(self):
         """When in an active state immediately shuts down any socket
@@ -779,7 +805,7 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
 
     def want_read(self):
         """True if the reactor is ready to process incoming socket data;
@@ -922,7 +948,7 @@ class Reactor:
                         self.__abort_socket_error(SocketReactorFail(e.errno))
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
@@ -1510,7 +1536,7 @@ class Reactor:
         self.__keepalive_due_deadline = None
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
 
     def __keepalive_abort_timeout(self):
         self.__assert_state_rules()
@@ -1534,7 +1560,7 @@ class Reactor:
         self.__abort(KeepaliveTimeoutReactorFail())
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()
 
     def write(self):
         """If there is any data queued to be written to the underlying
@@ -1565,4 +1591,4 @@ class Reactor:
             raise NotImplementedError(self.state)
 
         self.__assert_state_rules()
-        self.__want_rw_update()
+        self.__update_io_notification()

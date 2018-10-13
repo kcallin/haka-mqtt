@@ -1421,6 +1421,7 @@ class Reactor(object):
         self.__launch_next_queued_packet()
 
     def __set_handshake(self):
+        assert self.state in (ReactorState.connecting, ReactorState.handshake)
         self.__state = ReactorState.handshake
         self.__ssl_want_read = False
         self.__ssl_want_write = False
@@ -1432,6 +1433,8 @@ class Reactor(object):
             self.__ssl_want_read = True
         except ssl.SSLWantWriteError:
             self.__ssl_want_write = True
+        except socket.error as e:
+            self.__abort(e)
 
     def __on_connect(self):
         """Called when a socket becomes connected; reactor must be in
@@ -1546,6 +1549,13 @@ class Reactor(object):
         self.__abort(ProtocolReactorFail(m % params))
 
     def __abort(self, e):
+        """Immediately terminates all active resources and sets
+        `self.state` to the final state `ReactorState.error`.
+
+        Parameters
+        ----------
+        e: ReactorFail
+        """
         self.__terminate(ReactorState.error, e)
 
     def __keepalive_due_timeout(self):

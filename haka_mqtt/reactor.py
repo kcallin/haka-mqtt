@@ -711,7 +711,7 @@ class Reactor(object):
                             port,
                             chosen_postfix)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(family)
 
     def __connect(self, resolution):
         """Connect to the given resolved address.
@@ -746,11 +746,14 @@ class Reactor(object):
 
         if self.state in INACTIVE_STATES:
             self.__start()
-        elif self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.connack):
+        elif self.state in (ReactorState.name_resolution,
+                            ReactorState.connecting,
+                            ReactorState.handshake,
+                            ReactorState.connack):
             self.__log.warning("Start while already connecting to server; taking no additional action.")
         elif self.state is ReactorState.connected:
             self.__log.warning("Start while already connected; taking no action.")
-        elif self.state is (ReactorState.stopping, ReactorState.mute):
+        elif self.state in (ReactorState.stopping, ReactorState.mute):
             self.__log.warning("Start while already stopping; stop process cannot be aborted.")
         else:
             raise NotImplementedError(self.state)

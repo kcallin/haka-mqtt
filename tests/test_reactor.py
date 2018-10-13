@@ -914,6 +914,31 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
         self.reactor.terminate()
 
+    def test_publish_qos1_puback_after_mute(self):
+        # CHECKED-KC0 (2018-09-17)
+        publish_ticket = self.start_and_publish_qos1()
+
+        # Stop
+        self.reactor.stop()
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        # Muted
+        self.send_packet(MqttDisconnect())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        # Receive puback after muted.
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.puback)
+        puback = MqttPuback(publish_ticket.packet_id)
+        self.recv_packet_then_ewouldblock(puback)
+        self.on_puback.assert_called_once_with(self.reactor, puback)
+        self.assertEqual(publish_ticket.status, MqttPublishStatus.done)
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+        self.assertEqual(0, len(self.reactor.preflight_packets()))
+        self.assertEqual(1, len(self.reactor.in_flight_packets()))  # disconnect packet in flight
+        self.assertEqual(set(), self.reactor.send_packet_ids())
+
+        self.reactor.terminate()
+
     def test_publish_qos1_out_of_order_puback(self):
         # CHECKED-KC0 (2018-09-17)
         pt0 = self.start_and_publish_qos1()
@@ -1275,6 +1300,46 @@ class TestReceivePathQos0(TestReactor, unittest.TestCase):
 
         # Immediate shut-down.
         self.reactor.terminate()
+
+    def test_mute_recv_publish(self):
+        self.start_to_connected()
+        self.reactor.stop()
+        self.send_packet(MqttDisconnect())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        # Receive QoS=0 publish
+        publish = MqttPublish(1, 'topic', 'payload', False, 1, False)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.recv_packet_then_ewouldblock(publish)
+        self.on_publish.assert_called_once()
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.assert_not_called()
+
+        # Immediate shut-down.
+        self.reactor.terminate()
+
+    def test_publish_before_connack(self):
+        self.start_to_connack()
+
+        # Receive QoS=0 publish
+        publish = MqttPublish(1, 'topic', 'payload', False, 1, False)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.recv_packet_then_ewouldblock(publish)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+
+    def test_mute_publish_before_connack(self):
+        self.start_to_connack()
+        self.reactor.stop()
+        self.send_packet(MqttDisconnect())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        # Receive QoS=0 publish
+        publish = MqttPublish(1, 'topic', 'payload', False, 1, False)
+        self.set_send_side_effect([len(buffer_packet(publish))])
+        self.recv_packet_then_ewouldblock(publish)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
 
 
 class TestReceivePathQos1(TestReactor, unittest.TestCase):

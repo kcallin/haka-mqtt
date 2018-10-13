@@ -1070,31 +1070,36 @@ class Reactor(object):
         ----------
         publish: MqttPublish
         """
-        if self.state is ReactorState.connected:
-            self.__log.info('Received %s.', repr(publish))
-            if self.on_publish is not None:
-                self.on_publish(self, publish)
+        if self.state is ReactorState.connack:
+            self.__abort_protocol_violation('Received publish before connack.')
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                self.__log.info('Received %s.', repr(publish))
+                if self.on_publish is not None:
+                    self.on_publish(self, publish)
 
-            if publish.qos == 0:
-                pass
-            elif publish.qos == 1:
-                self.__preflight_queue.append(MqttPuback(publish.packet_id))
-            elif publish.qos == 2:
-                self.__preflight_queue.append(MqttPubrec(publish.packet_id))
-                # TODO: Record publish packet
+                if self.state is ReactorState.connected:
+                    if publish.qos == 0:
+                        pass
+                    elif publish.qos == 1:
+                        self.__preflight_queue.append(MqttPuback(publish.packet_id))
+                    elif publish.qos == 2:
+                        self.__preflight_queue.append(MqttPubrec(publish.packet_id))
+                    else:
+                        raise NotImplementedError(publish.qos)
+                elif self.state is ReactorState.mute:
+                    if publish.qos == 0:
+                        pass
+                    elif publish.qos == 1:
+                        self.__log.info('No puback will be published because reactor is stopping.')
+                    elif publish.qos == 2:
+                        self.__log.info('No pubrec will be published because reactor is stopping.')
+                    else:
+                        raise NotImplementedError(publish.qos)
+                else:
+                    raise NotImplementedError(self.state)
             else:
-                raise NotImplementedError(publish.qos)
-        # TODO: publish arrives while mute.
-        # elif self.state is ReactorState.stopping:
-        #     if publish.qos == 0:
-        #         pass
-        #     elif publish.qos == 1:
-        #         self.__log.info('Receiving %s but not sending puback because client is stopping.', repr(publish))
-        #     elif publish.qos == 2:
-        #         raise NotImplementedError()
-        #
-        #     if self.on_publish is not None:
-        #         self.on_publish(self, publish)
+                self.__abort_protocol_violation('Received publish before connack.')
         else:
             raise NotImplementedError(self.state)
 

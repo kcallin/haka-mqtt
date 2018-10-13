@@ -268,12 +268,15 @@ class TestReactor(unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertFalse(self.reactor.want_write())
 
-    def start_to_handshake(self):
-        """
-        1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
-        2. Socket becomes connected.
-        3. MqttConnect is sent to server.
-        """
+    def start_to_name_resolution(self):
+        self.assertTrue(self.reactor.state in INACTIVE_STATES)
+
+        # Start called
+        self.name_resolver.return_value = None
+        self.reactor.start()
+        self.assertEqual(ReactorState.name_resolution, self.reactor.state)
+
+    def start_to_connecting(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         # Set up start call.
@@ -290,6 +293,14 @@ class TestReactor(unittest.TestCase):
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
 
+    def start_to_handshake(self):
+        """
+        1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
+        2. Socket becomes connected.
+        3. MqttConnect is sent to server.
+        """
+        self.start_to_connecting()
+
         # Connect occurs
         self.socket.getsockopt.return_value = 0
         self.socket.do_handshake.side_effect = ssl.SSLWantWriteError()
@@ -303,7 +314,7 @@ class TestReactor(unittest.TestCase):
         self.socket.do_handshake.side_effect = None
         self.socket.do_handshake.reset_mock()
 
-    def start_to_connect(self, preflight_queue=[]):
+    def start_to_connack(self, preflight_queue=[]):
         """
         1. Call start but socket does not immediately connect (connect returns EINPROGRESS).
         2. Socket becomes connected.
@@ -341,14 +352,14 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.connack)
         self.socket.send.reset_mock()
 
-    def start_to_connack(self):
+    def start_to_connected(self):
         """
         1. Call start
         2. Socket does not immediately connect (EINPROGRESS)
         3. Socket transmits connect
         4. Socket receives connack
         """
-        self.start_to_connect()
+        self.start_to_connack()
 
         connack = MqttConnack(False, ConnackResult.accepted)
         self.recv_packet_then_ewouldblock(connack)
@@ -476,7 +487,7 @@ class TestConnect(TestReactor, unittest.TestCase):
 
 class TestReactorPaths(TestReactor, unittest.TestCase):
     def test_start(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         # Subscribe to topic
         topics = [MqttTopic('bear_topic', 1)]
@@ -553,7 +564,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
     def test_recv_connect(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         connect = MqttConnect('client', False, 0)
         self.recv_packet_then_ewouldblock(connect)
@@ -563,7 +574,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
 class TestConnackFail(TestReactor, unittest.TestCase):
     def test_connack_keepalive_timeout(self):
-        self.start_to_connack()
+        self.start_to_connected()
         p = MqttPingreq()
         self.set_send_packet_side_effect(p)
         self.assertFalse(self.reactor.want_write())
@@ -579,7 +590,7 @@ class TestConnackFail(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.error, KeepaliveTimeoutReactorFail())
 
     def test_connack_unexpected_session_present(self):
-        self.start_to_connect()
+        self.start_to_connack()
 
         connack = MqttConnack(True, ConnackResult.accepted)
         self.recv_packet_then_ewouldblock(connack)
@@ -591,7 +602,7 @@ class TestConnackFail(TestReactor, unittest.TestCase):
         fail_codes.sort()
 
         for fail_code in fail_codes:
-            self.start_to_connect()
+            self.start_to_connack()
 
             connack = MqttConnack(False, fail_code)
             self.recv_packet_then_ewouldblock(connack)
@@ -601,7 +612,7 @@ class TestConnackFail(TestReactor, unittest.TestCase):
 
 class TestSubscribePath(TestReactor, unittest.TestCase):
     def start_to_subscribe(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         # Create subscribe
         topics = [
@@ -686,7 +697,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
             :py:const:`MqttPublishStatus.done`.
         """
         # CHECKED-KC0 (2018-09-19)
-        self.start_to_connack()
+        self.start_to_connected()
 
         # Create publish
         ept = MqttPublishTicket(0, 'topic', 'outgoing', 0)
@@ -741,7 +752,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
             The returned MqttPublishTicket will have its status set to
             :py:const:`MqttPublishStatus.puback`.
         """
-        self.start_to_connack()
+        self.start_to_connected()
 
         # Create publish
         ept = MqttPublishTicket(0, 'topic', 'outgoing', 1)
@@ -847,7 +858,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
     def test_puback_not_in_flight(self):
         # CHECKED-KC0 (2018-09-17)
 
-        self.start_to_connack()
+        self.start_to_connected()
 
         puback = MqttPuback(0)
         self.recv_packet_then_ewouldblock(puback)
@@ -908,7 +919,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         return p
 
     def start_and_publish_qos2(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         publish = MqttPublish(0, 'topic', 'outgoing', False, 2, False)
         pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
@@ -1023,7 +1034,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_pubcomp_not_in_flightpublish_qos2_out_of_order_pubcomp(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         pubcomp = MqttPubcomp(0)
         self.recv_packet_then_ewouldblock(pubcomp)
@@ -1032,7 +1043,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_pubrec_not_in_flight_packet_id(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         pubrec = MqttPubrec(0)
         self.recv_packet_then_ewouldblock(pubrec)
@@ -1051,7 +1062,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
 
     def test_publish_disconnect_qos2(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
         pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
@@ -1069,7 +1080,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.error, SocketReactorFail(se.errno))
         self.socket.send.reset_mock()
 
-        self.start_to_connect(preflight_queue=[publish])
+        self.start_to_connack(preflight_queue=[publish])
 
         connack = MqttConnack(False, ConnackResult.accepted)
         self.set_send_packet_side_effect(publish)
@@ -1093,7 +1104,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
     def test_pubrel_disconnect_qos2(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         publish = MqttPublish(0, 'topic', 'incoming', False, 2, False)
         self.set_send_packet_side_effect(publish)
@@ -1118,7 +1129,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
         self.assertEqual(self.reactor.error, SocketReactorFail(se.errno))
 
-        self.start_to_connect(preflight_queue=[pubrel])
+        self.start_to_connack(preflight_queue=[pubrel])
 
         connack = MqttConnack(False, ConnackResult.accepted)
         self.recv_packet_then_ewouldblock(connack)
@@ -1136,7 +1147,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
 
 class TestReceivePathQos0(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         topics = [MqttTopic('bear_topic', 0)]
         self.subscribe_and_suback(topics)
@@ -1155,7 +1166,7 @@ class TestReceivePathQos0(TestReactor, unittest.TestCase):
 
 class TestReceivePathQos1(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         topics = [MqttTopic('bear_topic', 1)]
         self.subscribe_and_suback(topics)
@@ -1176,7 +1187,7 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
 
 class TestReceivePathQos2(TestReactor, unittest.TestCase):
     def test_recv_publish(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         topics = [MqttTopic('bear_topic', 2)]
         self.subscribe_and_suback(topics)
@@ -1260,6 +1271,49 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.reactor.read()
 
 
+class TestReactorStart(TestReactor, unittest.TestCase):
+    def test_name_resolution(self):
+        self.start_to_name_resolution()
+        self.reactor.start()
+        self.assertEqual(ReactorState.name_resolution, self.reactor.state)
+        self.reactor.terminate()
+
+    def test_connecting(self):
+        self.start_to_connecting()
+        self.reactor.start()
+        self.assertEqual(ReactorState.connecting, self.reactor.state)
+        self.reactor.terminate()
+
+    def test_handshake(self):
+        self.start_to_handshake()
+        self.reactor.start()
+        self.assertEqual(ReactorState.handshake, self.reactor.state)
+        self.reactor.terminate()
+
+    def test_connack(self):
+        self.start_to_connack()
+        self.reactor.start()
+        self.assertEqual(ReactorState.connack, self.reactor.state)
+        self.reactor.terminate()
+
+    def test_connected(self):
+        self.start_to_connected()
+        self.reactor.start()
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.reactor.terminate()
+
+    def test_mute(self):
+        self.start_to_connected()
+        self.reactor.stop()
+        #self.reactor.read()
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.send_packet(MqttDisconnect())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+        self.reactor.start()
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+        self.reactor.terminate()
+
+
 class TestReactorStop(TestReactor, unittest.TestCase):
     def test_init(self):
         self.assertEqual(ReactorState.init, self.reactor.state)
@@ -1269,12 +1323,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_name_resolution_error_and_stop_on_error(self):
-        self.assertTrue(self.reactor.state in INACTIVE_STATES)
-
-        # Start called
-        self.name_resolver.return_value = None
-        self.reactor.start()
-        self.assertEqual(ReactorState.name_resolution, self.reactor.state)
+        self.start_to_name_resolution()
 
         # DNS resolved
         kwargs = self.name_resolver.call_args[1]
@@ -1327,7 +1376,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         # Start with async connect
-        self.start_to_connect()
+        self.start_to_connack()
 
         # Verify that stop has no effect.
         self.reactor.stop()
@@ -1352,7 +1401,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         pub_ticket = self.reactor.publish('topic', 'payload', 1)
 
         # Start with async connect
-        self.start_to_connect(preflight_queue=[pub_ticket.packet()])
+        self.start_to_connack(preflight_queue=[pub_ticket.packet()])
 
         # Verify that stop has no effect.
         self.reactor.stop()
@@ -1376,7 +1425,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_connected_with_empty_preflight(self):
-        self.start_to_connack()
+        self.start_to_connected()
         self.reactor.stop()
 
         disconnect = MqttDisconnect()
@@ -1418,21 +1467,21 @@ class TestPingresp(TestReactor, unittest.TestCase):
 
     def test_connack(self):
         # Start with async connect
-        self.start_to_connect()
+        self.start_to_connack()
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_connected(self):
-        self.start_to_connack()
+        self.start_to_connected()
 
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_stopping(self):
-        self.start_to_connack()
+        self.start_to_connected()
         self.reactor.stop()
         # TODO: Verify stopping state is used/entered correctly.
         # self.assertEqual(ReactorState.stopping, self.reactor.state)
@@ -1442,7 +1491,7 @@ class TestPingresp(TestReactor, unittest.TestCase):
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorFail))
 
     def test_mute(self):
-        self.start_to_connack()
+        self.start_to_connected()
         self.reactor.stop()
 
         disconnect = MqttDisconnect()

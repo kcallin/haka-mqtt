@@ -393,6 +393,7 @@ class Reactor(object):
 
         self.__will = None
 
+        self.__name_resolution_future = None
         self.__pingreq_active = False
 
         # Want read
@@ -502,6 +503,7 @@ class Reactor(object):
 
         if self.state is ReactorState.mute:
             assert self.__keepalive_due_deadline is None
+            assert self.enable is False
 
         if self.state is ReactorState.error:
             assert self.error is not None
@@ -625,6 +627,8 @@ class Reactor(object):
         self.__pingreq_active = False
         self.__recveived_connack = False
 
+        self.__name_resolution_future = None
+
         preflight_queue = []
         for p in self.__inflight_queue:
             if p.packet_type is MqttControlPacketType.publish:
@@ -657,34 +661,32 @@ class Reactor(object):
 
         self.__state = ReactorState.name_resolution
 
-        try:
-            self.__log.info('Looking up host %s:%d.', self.__host, self.__port)
-            results = self.__name_resolver(self.__host,
-                                           self.__port,
-                                           socktype=socket.SOCK_STREAM,
-                                           proto=socket.IPPROTO_TCP,
-                                           callback=self.__on_name_resolution)
-        except socket.gaierror as e:
-            self.__on_name_resolution(e)
-        else:
-            if results is not None:
-                self.__on_name_resolution(results)
+        self.__log.info('Looking up host %s:%d.', self.__host, self.__port)
+        self.__name_resolution_future = self.__name_resolver(self.__host,
+                                      self.__port,
+                                      socktype=socket.SOCK_STREAM,
+                                      proto=socket.IPPROTO_TCP)
+        self.__name_resolution_future.add_done_callback(self.__on_name_resolution)
 
-    def __on_name_resolution(self, results):
+    def __on_name_resolution(self, future):
         """Called when hostname resolution is complete.
 
         Parameters
         ----------
-        results: 5-tuple
-            A 5-tuple of (family, socktype, proto, canonname, sockaddr).
+        Future
+            The future.results will be a 5-tuple
+            of (family, socktype, proto, canonname, sockaddr) or None if
+            there was no result.
 
         """
-        assert results is not None
+        assert future.done()
 
-        # TODO: Termination of async dns query.
-        if self.enable:
-            if isinstance(results, socket.gaierror):
-                e = results
+        if not future.cancelled():
+            assert self.enable
+
+            results = future.result()
+            if results is None:
+                e = future.exception()
                 self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
                 self.__abort(AddressReactorError(e))
             else:
@@ -698,8 +700,6 @@ class Reactor(object):
                     self.__connect(results[0])
                 else:
                     raise NotImplementedError(len(results))
-        else:
-            self.__terminate(ReactorState.stopped, None)
 
     def __log_name_resolution(self, resolution, chosen=False):
         """Called when hostname resolution is complete.
@@ -802,25 +802,18 @@ class Reactor(object):
         self.__assert_state_rules()
 
         if self.state is ReactorState.init:
-            assert self.enable is False
             self.__log.info('Stopped.')
             self.__state = ReactorState.stopped
         elif self.state is ReactorState.name_resolution:
-            if self.enable:
-                # When resolution is complete
-                self.__log.info('Stopping.')
-                self.__enable = False
-            else:
-                self.__log.info('Stop request while already stopping.')
+            self.__log.info('Stopping.')
+            self.__terminate(ReactorState.stopped, None)
         elif self.state is ReactorState.connecting:
             assert self.enable is True
             self.__log.info('Stopping.')
-            self.__enable = False
             self.__terminate(ReactorState.stopped, None)
         elif self.state is ReactorState.handshake:
             assert self.enable is True
             self.__log.info('Stopping.')
-            self.__enable = False
             self.__terminate(ReactorState.stopped, None)
         elif self.state in (ReactorState.connack, ReactorState.connected):
             if self.enable:
@@ -830,13 +823,10 @@ class Reactor(object):
             else:
                 self.__log.info('Stop request while already stopping.')
         elif self.state is ReactorState.mute:
-            assert self.enable is False
             self.__log.info('Stop request while already stopping.')
         elif self.state is ReactorState.stopped:
-            assert self.enable is False
             self.__log.warning('Stop while already stopped.')
         elif self.state is ReactorState.error:
-            assert self.enable is False
             self.__log.warning('Stop while already in error.')
         else:
             raise NotImplementedError(self.state)
@@ -1571,6 +1561,9 @@ class Reactor(object):
         state: ReactorState
         error: ReactorError
         """
+        if self.__name_resolution_future is not None:
+            self.__name_resolution_future.cancel()
+            self.__name_resolution_future = None
 
         self.__enable = False
         if self.state in ACTIVE_STATES:

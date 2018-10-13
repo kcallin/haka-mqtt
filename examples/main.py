@@ -3,11 +3,10 @@ import argparse
 import logging
 import ssl
 import sys
-import socket
 from select import select
 from time import time
 
-from haka_mqtt.dns import SynchronousDnsResolver, AsyncDnsResolver
+from haka_mqtt.dns_async import AsyncFutureDnsResolver
 from haka_mqtt.socket_factory import SslSocketFactory
 from mqtt_codec.packet import MqttTopic, MqttControlPacketType
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
@@ -205,9 +204,7 @@ def main(args=sys.argv[1:]):
     clock = SystemClock()
 
     scheduler = Scheduler()
-
-    async_name_resolver = AsyncDnsResolver()
-
+    async_name_resolver = AsyncFutureDnsResolver()
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 
     p = ReactorProperties()
@@ -217,7 +214,6 @@ def main(args=sys.argv[1:]):
     p.keepalive_period = 10
     p.client_id = 'bobby'
     p.scheduler = scheduler
-    p.name_resolver = SynchronousDnsResolver()
     p.name_resolver = async_name_resolver
 
     client = MqttClient(p)

@@ -64,6 +64,70 @@ def socket_error(errno):
     return socket.error(errno, os.strerror(errno))
 
 
+class DebugFuture(object):
+    def __init__(self):
+        self.__cancelled = False
+        self.__done = False
+        self.__callbacks = []
+
+        self.__result = None
+        self.__exception = None
+
+    def __notify(self):
+        for cb in self.__callbacks:
+            cb(self)
+
+    def cancel(self):
+        if self.done():
+            rv = False
+        else:
+            self.__cancelled = True
+            self.__done = True
+            self.__notify()
+            rv = True
+
+        return rv
+
+    def set_result(self, result):
+        """
+        Sets the result of the work associated with the Future to result.
+
+        This method should only be used by Executor implementations and unit tests.
+        """
+        self.__result = result
+
+    def set_exception(self, exception):
+        """
+            Sets the result of the work associated with the Future to the Exception exception.
+
+            This method should only be used by Executor implementations and unit tests.
+        """
+        self.__exception = exception
+
+    def set_done(self, done):
+        self.__done = done
+        if done:
+            self.__notify()
+
+    def cancelled(self):
+        return self.__cancelled
+
+    def done(self):
+        return self.__done
+
+    def result(self, timeout=None):
+        return self.__result
+
+    def exception(self, timeout=None):
+        return self.__exception
+
+    def add_done_callback(self, fn):
+        if self.done():
+            fn(self)
+        else:
+            self.__callbacks.append(fn)
+
+
 class TestReactor(unittest.TestCase):
     def reactor_properties(self):
         p = ReactorProperties()
@@ -125,11 +189,15 @@ class TestReactor(unittest.TestCase):
 
         self.socket = Mock()
         self.endpoint = ('test.mosquitto.org', 1883)
-        self.name_resolver = Mock()
-        self.name_resolver.return_value = [
+        self.name_resolver_future = DebugFuture()
+        self.name_resolver_future.set_result([
             self.af_inet_name_resolution(),
             self.af_inet6_name_resolution()
-        ]
+        ])
+        self.name_resolver_future.set_done(True)
+        self.name_resolver = Mock()
+        self.name_resolver.return_value = self.name_resolver_future
+        self.expected_sockaddr = self.af_inet_name_resolution()[4]
         self.client_id = 'client'
         self.keepalive_period = 10*60
         self.scheduler = Scheduler()
@@ -276,7 +344,8 @@ class TestReactor(unittest.TestCase):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         # Start called
-        self.name_resolver.return_value = None
+        self.name_resolver_future.set_result(None)
+        self.name_resolver_future.set_done(False)
         self.reactor.start()
         self.assertEqual(ReactorState.name_resolution, self.reactor.state)
 
@@ -347,7 +416,7 @@ class TestReactor(unittest.TestCase):
         connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)
         self.set_send_packet_side_effect(connect)
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.connack, self.reactor.state)
         self.assertTrue(self.reactor.want_read())
@@ -407,11 +476,13 @@ class TestReactor(unittest.TestCase):
 
 
 class TestDnsResolution(TestReactor, unittest.TestCase):
-    def test_sync_getaddrinfo_fail_enohost(self):
+    def test_sync_getaddrinfo_fail_eai_noname(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
-        self.name_resolver.side_effect = e
+        self.name_resolver_future.set_exception(e)
+        self.name_resolver_future.set_result(None)
+        self.name_resolver_future.set_done(True)
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
@@ -420,7 +491,7 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
     def test_sync_getaddrinfo_fail_nohost(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
-        self.name_resolver.return_value = []
+        self.name_resolver_future.set_result([])
         self.reactor.start()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_connect_fail.assert_called_once()
@@ -428,11 +499,13 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
         self.assertEqual(AddressReactorError(e), self.reactor.error)
 
-    def test_async_getaddrinfo_fail_enohost(self):
+    def test_async_getaddrinfo_fail_eai_noname(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
-        self.name_resolver.return_value = None
+        self.name_resolver_future.set_exception(e)
+        self.name_resolver_future.set_result(None)
+        self.name_resolver_future.set_done(False)
         self.reactor.start()
         self.assertEqual(ReactorState.name_resolution, self.reactor.state)
 
@@ -440,9 +513,7 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.on_connect_fail.assert_not_called()
         self.on_disconnect.assert_not_called()
 
-        kwargs = self.name_resolver.call_args[1]
-        callable = kwargs['callback']
-        callable(e)
+        self.name_resolver_future.set_done(True)
         self.on_connect_fail.assert_called_once_with(self.reactor)
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
@@ -483,7 +554,7 @@ class TestConnect(TestReactor, unittest.TestCase):
         socket_error = socket.error(errno.ECONNABORTED, os.strerror(e))
         self.socket.connect.side_effect = socket_error
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.socket.connect.reset_mock()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertEqual(SocketReactorError(e), self.reactor.error)
@@ -529,7 +600,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
 
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -922,7 +993,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         # Start a new connection which does not immediately connect.
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1266,7 +1337,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1280,7 +1351,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1297,7 +1368,7 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.init)
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
         self.reactor.start()
-        self.socket.connect.assert_called_once_with(self.name_resolver.return_value[0][4])
+        self.socket.connect.assert_called_once_with(self.expected_sockaddr)
         self.assertEqual(ReactorState.connecting, self.reactor.state)
         self.assertFalse(self.reactor.want_read())
         self.assertTrue(self.reactor.want_write())
@@ -1368,10 +1439,10 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.start_to_name_resolution()
 
         # DNS resolved
-        kwargs = self.name_resolver.call_args[1]
-        callable = kwargs['callback']
         e = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
-        callable(e)
+        self.name_resolver_future.set_exception(e)
+        self.name_resolver_future.set_result(None)
+        self.name_resolver_future.set_done(True)
         self.on_connect_fail.assert_called_once_with(self.reactor)
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
@@ -1385,19 +1456,12 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
         # Start called
-        self.name_resolver.return_value = None
+        self.name_resolver_future.set_done(False)
         self.reactor.start()
         self.assertEqual(ReactorState.name_resolution, self.reactor.state)
 
         # Stop request
         self.reactor.stop()
-        # TODO: Immediate stop should be possible here if the async DNS
-        #       query can be cancelled.
-
-        # DNS resolved
-        kwargs = self.name_resolver.call_args[1]
-        callable = kwargs['callback']
-        callable([self.af_inet_name_resolution()])
         self.on_connect_fail.assert_called_once_with(self.reactor)
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.stopped, self.reactor.state)

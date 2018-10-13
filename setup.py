@@ -21,7 +21,7 @@ setup(
     name="haka-mqtt",
     version="0.1.0",
     install_requires=[
-        'enum34>=1.1.6;python_version<"3.4"',
+        'futures; python_version == "2.7"',
         'mqtt-codec~=0.1.0',
     ],
     tests_require = [

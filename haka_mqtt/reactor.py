@@ -339,13 +339,14 @@ class Reactor(object):
         assert properties.selector is not None
 
         if isinstance(log, (str, unicode)):
-            self.__log = logging.getLogger('haka')
+            self.__log = logging.getLogger(log)
         else:
             assert hasattr(log, 'debug')
             assert hasattr(log, 'info')
             assert hasattr(log, 'warning')
             assert hasattr(log, 'error')
             self.__log = log
+
         self.__wbuf = bytearray()  #
         self.__rbuf = bytearray()  #
 

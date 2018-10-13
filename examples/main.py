@@ -8,6 +8,7 @@ from select import select
 from time import time
 
 from haka_mqtt.dns import SynchronousDnsResolver, AsyncDnsResolver
+from haka_mqtt.socket_factory import SslSocketFactory
 from mqtt_codec.packet import MqttTopic, MqttControlPacketType
 from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
 from haka_mqtt.clock import SystemClock
@@ -144,23 +145,6 @@ class MqttClient():
         self.__running = True
 
 
-def create_socket():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setblocking(0)
-
-    return sock
-
-
-def ssl_create_socket():
-    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock = ctx.wrap_socket(sock)
-    sock.setblocking(0)
-
-    return sock
-
-
 def argparse_endpoint(s):
     """
 
@@ -224,8 +208,10 @@ def main(args=sys.argv[1:]):
 
     async_name_resolver = AsyncDnsResolver()
 
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+
     p = ReactorProperties()
-    p.socket_factory = ssl_create_socket
+    p.socket_factory = SslSocketFactory(ssl_context, endpoint[0])
     p.endpoint = endpoint
     p.clock = clock
     p.keepalive_period = 10

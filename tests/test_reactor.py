@@ -181,7 +181,7 @@ class TestReactor(unittest.TestCase):
         self.socket.recv.side_effect = None
         self.socket.recv.return_value = None
 
-    def recv_mute(self):
+    def recv_eof(self):
         self.set_recv_side_effect([''])
         self.reactor.read()
         self.socket.recv.assert_called_once()
@@ -1435,7 +1435,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.mute, self.reactor.state)
 
         # Server processes disconnect and sends mute of its own.
-        self.recv_mute()
+        self.recv_eof()
 
     def test_connack_with_preflight(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
@@ -1463,7 +1463,22 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.recv_packet_then_ewouldblock(puback)
         self.assertEqual(ReactorState.mute, self.reactor.state)
 
-        self.recv_mute()
+        self.recv_eof()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
+
+    def test_recv_connack_while_mute(self):
+        self.start_to_connack()
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_packet_then_ewouldblock(MqttConnack(False, ConnackResult.accepted))
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_connected_with_empty_preflight(self):
@@ -1475,7 +1490,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
 
         self.assertEqual(ReactorState.mute, self.reactor.state)
 
-        self.recv_mute()
+        self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_stopping(self):
@@ -1611,5 +1626,5 @@ class TestPingreqPingresp(TestReactor, unittest.TestCase):
         self.scheduler.poll(self.reactor.keepalive_period)
         self.assertEqual(ReactorState.mute, self.reactor.state)
 
-        self.recv_mute()
+        self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state)

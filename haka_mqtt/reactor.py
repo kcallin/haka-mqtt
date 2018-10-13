@@ -309,6 +309,8 @@ class Reactor(object):
     on_connect_fail: callable
     on_disconnect: callable
     on_connack: callable
+        The `reactor.state` will be `ReactorState.connected` or
+        `ReactorState.mute` if the reactor is shutting down.
     on_suback: callable
     on_unsuback: callable
     on_pubrec: callable

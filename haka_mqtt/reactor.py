@@ -35,8 +35,8 @@ from mqtt_codec.packet import (
     MqttPubcomp,
     MqttPingreq,
     MqttPingresp,
-    MqttDisconnect
-)
+    MqttDisconnect,
+    MqttWill)
 from haka_mqtt.mqtt_request import (
     MqttSubscribeTicket,
     MqttUnsubscribeRequest,
@@ -304,7 +304,7 @@ class _AssertSelectAdapter(object):
                 self.__selector.del_read(f, self.__reactor)
 
 
-class Reactor:
+class Reactor(object):
     """
     Parameters
     ----------
@@ -392,6 +392,8 @@ class Reactor:
         self.__ping_active = False
         self.__scheduler = properties.scheduler
 
+        self.__will = None
+
         # Want read
         self.__selector = _AssertSelectAdapter(self, properties.selector)
 
@@ -454,6 +456,26 @@ class Reactor:
     def enable(self):
         """bool: True when enabled; False disabled."""
         return self.__enable
+
+    @property
+    def will(self):
+        """mqtt_codec.packet.MqttWill or None: Last will and testament."""
+        return self.__will
+
+    @will.setter
+    def will(self, will):
+        """
+
+        Parameters
+        ----------
+        will: mqtt_codec.packet.MqttWill or None
+            Last will and testament or None is no last will and
+            testament is desired.
+        """
+        if will is None or isinstance(will, MqttWill):
+            self.__will = will
+        else:
+            raise TypeError()
 
     def __update_io_notification(self):
         self.__selector.update(self.want_read(), self.want_write(), self.socket)
@@ -1389,7 +1411,10 @@ class Reactor:
 
         self.__state = ReactorState.connack
 
-        connect = MqttConnect(self.client_id, self.clean_session, self.keepalive_period,
+        connect = MqttConnect(self.client_id,
+                              self.clean_session,
+                              self.keepalive_period,
+                              will=self.will,
                               username=self.__username,
                               password=self.__password)
         self.__preflight_queue.insert(0, connect)

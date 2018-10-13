@@ -31,7 +31,7 @@ from mqtt_codec.packet import (
     MqttPubrel,
     MqttPubcomp,
     MqttPingreq,
-    MqttDisconnect)
+    MqttDisconnect, MqttWill)
 from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus, MqttSubscribeTicket
 from haka_mqtt.reactor import (
     Reactor,
@@ -432,6 +432,23 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.on_disconnect.assert_not_called()
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertEqual(AddressReactorFail(e), self.reactor.error)
+
+
+class TestWillProperty(TestReactor, unittest.TestCase):
+    def test_will_set_reset(self):
+        self.assertIsNone(self.reactor.will)
+        will = MqttWill(0, 'topic', 'payload', False)
+        self.reactor.will = will
+        self.assertEqual(will, self.reactor.will)
+        self.reactor.will = None
+        self.assertIsNone(self.reactor.will)
+
+    def test_will_invalid_type(self):
+        try:
+            self.reactor.will = 1
+            self.fail('Expected TypeError to be raised.')
+        except TypeError:
+            pass
 
 
 class TestConnect(TestReactor, unittest.TestCase):

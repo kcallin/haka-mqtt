@@ -356,6 +356,7 @@ class Reactor(object):
         self.socket = None
         self.__host, self.__port = properties.endpoint
         self.__enable = False
+        self.__recveived_connack = False
         self.__state = ReactorState.init
         self.__error = None
 
@@ -610,6 +611,7 @@ class Reactor(object):
         self.__ssl_want_read = False
 
         self.__pingreq_active = False
+        self.__recveived_connack = False
 
         preflight_queue = []
         for p in self.__inflight_queue:
@@ -1005,7 +1007,6 @@ class Reactor(object):
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
-        # TODO: connack accepted only happens at certain times.
         if self.state in (ReactorState.connack, ReactorState.mute):
             if connack.session_present and self.clean_session:
                 # [MQTT-3.2.2-1]
@@ -1032,33 +1033,34 @@ class Reactor(object):
         ----------
         connack: MqttConnack
         """
-        # TODO: Can this method ever be reached while mute?
-        if self.state in (ReactorState.connack, ReactorState.mute):
-            self.__log.info('Received %s.', repr(connack))
-
-            if connack.return_code == ConnackResult.accepted:
-                # The first packet sent from the Server to the Client MUST
-                # be a CONNACK Packet [MQTT-3.2.0-1].
-                self.__on_connack_accepted(connack)
-            elif connack.return_code == ConnackResult.fail_bad_protocol_version:
-                self.__log.error('Connect failed: bad protocol version.')
-                self.__abort(ConnectReactorError(connack.return_code))
-            elif connack.return_code == ConnackResult.fail_bad_client_id:
-                self.__log.error('Connect failed: bad client ID.')
-                self.__abort(ConnectReactorError(connack.return_code))
-            elif connack.return_code == ConnackResult.fail_server_unavailable:
-                self.__log.error('Connect failed: server unavailable.')
-                self.__abort(ConnectReactorError(connack.return_code))
-            elif connack.return_code == ConnackResult.fail_bad_username_or_password:
-                self.__log.error('Connect failed: bad username or password.')
-                self.__abort(ConnectReactorError(connack.return_code))
-            elif connack.return_code == ConnackResult.fail_not_authorized:
-                self.__log.error('Connect failed: not authorized.')
-                self.__abort(ConnectReactorError(connack.return_code))
+        if self.state in (ReactorState.connack, ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                self.__abort_protocol_violation('Received connack at an inappropriate time.  [MQTT-3.2.0-1]')
             else:
-                raise NotImplementedError(connack.return_code)
-        elif self.state is ReactorState.connected:
-            self.__abort_protocol_violation('Received connack at an inappropriate time.  [MQTT-3.2.0-1]')
+                self.__recveived_connack = True
+                self.__log.info('Received %s.', repr(connack))
+
+                if connack.return_code == ConnackResult.accepted:
+                    # The first packet sent from the Server to the Client MUST
+                    # be a CONNACK Packet [MQTT-3.2.0-1].
+                    self.__on_connack_accepted(connack)
+                elif connack.return_code == ConnackResult.fail_bad_protocol_version:
+                    self.__log.error('Connect failed: bad protocol version.')
+                    self.__abort(ConnectReactorError(connack.return_code))
+                elif connack.return_code == ConnackResult.fail_bad_client_id:
+                    self.__log.error('Connect failed: bad client ID.')
+                    self.__abort(ConnectReactorError(connack.return_code))
+                elif connack.return_code == ConnackResult.fail_server_unavailable:
+                    self.__log.error('Connect failed: server unavailable.')
+                    self.__abort(ConnectReactorError(connack.return_code))
+                elif connack.return_code == ConnackResult.fail_bad_username_or_password:
+                    self.__log.error('Connect failed: bad username or password.')
+                    self.__abort(ConnectReactorError(connack.return_code))
+                elif connack.return_code == ConnackResult.fail_not_authorized:
+                    self.__log.error('Connect failed: not authorized.')
+                    self.__abort(ConnectReactorError(connack.return_code))
+                else:
+                    raise NotImplementedError(connack.return_code)
         else:
             raise NotImplementedError(self.state)
 

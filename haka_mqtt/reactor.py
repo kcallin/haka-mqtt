@@ -24,8 +24,6 @@ from mqtt_codec.packet import (
     MqttConnect,
     ConnackResult,
     MqttConnack,
-    MqttSubscribe,
-    SubscribeResult,
     MqttSuback,
     MqttPublish,
     MqttPuback,
@@ -434,7 +432,9 @@ class Reactor(object):
 
     @property
     def error(self):
-        """ReactorError or None"""
+        """ReactorError or None: When `self.state` is
+        `ReactorState.error` returns a subclass of `ReactorError`
+        otherwise returns `None`."""
         return self.__error
 
     @property
@@ -477,6 +477,7 @@ class Reactor(object):
         if self.state in INACTIVE_STATES:
             assert self.__keepalive_due_deadline is None
             assert self.__keepalive_abort_deadline is None
+            self.__selector.assert_closed()
 
         if self.state in (ReactorState.name_resolution,
                           ReactorState.connecting):
@@ -803,8 +804,8 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.state)
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()
 
     def terminate(self):
         """When in an active state immediately shuts down any socket
@@ -826,8 +827,8 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.state)
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()
 
     def want_read(self):
         """True if the reactor is ready to process incoming socket data;
@@ -910,6 +911,9 @@ class Reactor(object):
                     self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
                 elif header.packet_type == MqttControlPacketType.pingresp:
                     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
+                # TODO:
+                # elif header.packet_type == MqttControlPacketType.pingreq:
+                #     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
                 elif header.packet_type == MqttControlPacketType.pubrel:
                     self.__on_pubrel(self.__decode_packet_body(header, num_header_bytes, MqttPubrel))
                 elif header.packet_type == MqttControlPacketType.pubcomp:
@@ -969,8 +973,8 @@ class Reactor(object):
                     else:
                         self.__abort_socket_error(SocketReactorFail(e.errno))
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()
         return num_bytes_read
 
     def __on_connack_accepted(self, connack):
@@ -1255,6 +1259,13 @@ class Reactor(object):
         """
         if self.state is ReactorState.connected:
             self.__log.info('Received %s.', repr(pingresp))
+        # TODO: Verify handling in these other states.
+        # elif self.state is ReactorState.connack:
+        #     pass
+        # elif self.state is ReactorState.stopping:
+        #     pass
+        # elif self.state is ReactorState.mute:
+        #     pass
         else:
             raise NotImplementedError(self.state)
 
@@ -1594,8 +1605,8 @@ class Reactor(object):
 
         self.__abort(KeepaliveTimeoutReactorFail())
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()
 
     def write(self):
         """If there is any data queued to be written to the underlying
@@ -1625,5 +1636,5 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.state)
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()

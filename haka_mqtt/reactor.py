@@ -303,6 +303,10 @@ class Reactor(object):
     Parameters
     ----------
     properties: ReactorProperties
+    log: str or logging.Logger
+        If `str` then calls logging.getLogger(log) to acquire a logger;
+        otherwise asserts that `log` has `debug`, `info`, etc. methods
+        and uses log as if it were a `logging.getLogger` object.
 
     Attributes
     -----------
@@ -319,7 +323,7 @@ class Reactor(object):
     on_puback: callable
     on_pubrel: callable
     """
-    def __init__(self, properties):
+    def __init__(self, properties, log='haka'):
         assert properties.client_id is not None
         assert properties.socket_factory is not None
         assert properties.endpoint is not None
@@ -334,7 +338,14 @@ class Reactor(object):
         assert isinstance(port, int)
         assert properties.selector is not None
 
-        self.__log = logging.getLogger('haka')
+        if isinstance(log, (str, unicode)):
+            self.__log = logging.getLogger('haka')
+        else:
+            assert hasattr(log, 'debug')
+            assert hasattr(log, 'info')
+            assert hasattr(log, 'warning')
+            assert hasattr(log, 'error')
+            self.__log = log
         self.__wbuf = bytearray()  #
         self.__rbuf = bytearray()  #
 

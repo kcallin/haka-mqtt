@@ -185,6 +185,7 @@ class TestReactor(unittest.TestCase):
         return socket.AF_INET6, 1, 6, '', ('2606:2800:220:1:248:1893:25c8:1946', 80, 0, 0)
 
     def setUp(self):
+        unittest.TestCase.setUp(self)
         self.setup_logging()
 
         self.socket = Mock()
@@ -645,6 +646,85 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.recv_packet_then_ewouldblock(connect)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, DecodeReactorError))
+
+
+class TestPacketsBeforeConnack(TestReactor, unittest.TestCase):
+    def setUp(self):
+        TestReactor.setUp(self)
+        self.start_to_connack()
+
+    def tearDown(self):
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+        TestReactor.tearDown(self)
+
+    def test_suback(self):
+        self.recv_packet_then_ewouldblock(MqttSuback(0, [SubscribeResult.qos0]))
+
+    def test_unsuback(self):
+        self.recv_packet_then_ewouldblock(MqttUnsuback(0))
+
+    def test_puback(self):
+        self.recv_packet_then_ewouldblock(MqttPuback(0))
+
+    def test_publish(self):
+        self.recv_packet_then_ewouldblock(MqttPublish(0, 'topic_str', 'payload_bytes', False, 0, False))
+
+    def test_pingresp(self):
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+
+    def test_pingreq(self):
+        self.recv_packet_then_ewouldblock(MqttPingreq())
+
+    def test_pubrel(self):
+        self.recv_packet_then_ewouldblock(MqttPubrel(0))
+
+    def test_pubcomp(self):
+        self.recv_packet_then_ewouldblock(MqttPubcomp(0))
+
+    def test_pubrec(self):
+        self.recv_packet_then_ewouldblock(MqttPubrec(0))
+
+
+class TestPacketsBeforeConnackWhileMute(TestReactor, unittest.TestCase):
+    def setUp(self):
+        TestReactor.setUp(self)
+        self.start_to_connack()
+        self.reactor.stop()
+        self.send_packet(MqttDisconnect())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+    def tearDown(self):
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+        TestReactor.tearDown(self)
+
+    def test_suback(self):
+        self.recv_packet_then_ewouldblock(MqttSuback(0, [SubscribeResult.qos0]))
+
+    def test_unsuback(self):
+        self.recv_packet_then_ewouldblock(MqttUnsuback(0))
+
+    def test_puback(self):
+        self.recv_packet_then_ewouldblock(MqttPuback(0))
+
+    def test_publish(self):
+        self.recv_packet_then_ewouldblock(MqttPublish(0, 'topic_str', 'payload_bytes', False, 0, False))
+
+    def test_pingresp(self):
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+
+    def test_pingreq(self):
+        self.recv_packet_then_ewouldblock(MqttPingreq())
+
+    def test_pubrel(self):
+        self.recv_packet_then_ewouldblock(MqttPubrel(0))
+
+    def test_pubcomp(self):
+        self.recv_packet_then_ewouldblock(MqttPubcomp(0))
+
+    def test_pubrec(self):
+        self.recv_packet_then_ewouldblock(MqttPubrec(0))
 
 
 class TestConnackFail(TestReactor, unittest.TestCase):

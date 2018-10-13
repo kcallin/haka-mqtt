@@ -1071,7 +1071,7 @@ class Reactor(object):
         publish: MqttPublish
         """
         if self.state is ReactorState.connack:
-            self.__abort_protocol_violation('Received publish before connack.')
+            self.__abort_early_packet(publish)
         elif self.state in (ReactorState.connected, ReactorState.mute):
             if self.__recveived_connack:
                 self.__log.info('Received %s.', repr(publish))
@@ -1099,7 +1099,7 @@ class Reactor(object):
                 else:
                     raise NotImplementedError(self.state)
             else:
-                self.__abort_protocol_violation('Received publish before connack.')
+                self.__abort_early_packet(publish)
         else:
             raise NotImplementedError(self.state)
 
@@ -1110,33 +1110,38 @@ class Reactor(object):
         ----------
         suback: MqttSuback
         """
-        if self.state is ReactorState.connected:
-            idx = index(self.__inflight_queue,
-                        lambda p: p.packet_type == MqttControlPacketType.subscribe and p.packet_id == suback.packet_id)
-            if idx is None:
-                subscribe = None
-            else:
-                subscribe = self.__inflight_queue[idx]
-
-            if subscribe is None:
-                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
-                                                repr(suback))
-            else:
-                if len(suback.results) == len(subscribe.topics):
-                    self.__log.info('Received %s.', repr(suback))
-                    subscribe._set_status(MqttSubscribeStatus.done)
-
-                    self.__send_path_packet_ids.release(subscribe.packet_id)
-                    del self.__inflight_queue[idx]
-
-                    if self.on_suback is not None:
-                        self.on_suback(self, suback)
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(suback)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                idx = index(self.__inflight_queue,
+                            lambda p: p.packet_type == MqttControlPacketType.subscribe and p.packet_id == suback.packet_id)
+                if idx is None:
+                    subscribe = None
                 else:
-                    m = 'Received %s as a response to %s, but the number of subscription' \
-                        ' results does not equal the number of subscription requests; aborting.'
-                    self.__abort_protocol_violation(m,
-                                                    repr(suback),
-                                                    repr(subscribe.packet()))
+                    subscribe = self.__inflight_queue[idx]
+
+                if subscribe is None:
+                    self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
+                                                    repr(suback))
+                else:
+                    if len(suback.results) == len(subscribe.topics):
+                        self.__log.info('Received %s.', repr(suback))
+                        subscribe._set_status(MqttSubscribeStatus.done)
+
+                        self.__send_path_packet_ids.release(subscribe.packet_id)
+                        del self.__inflight_queue[idx]
+
+                        if self.on_suback is not None:
+                            self.on_suback(self, suback)
+                    else:
+                        m = 'Received %s as a response to %s, but the number of subscription' \
+                            ' results does not equal the number of subscription requests; aborting.'
+                        self.__abort_protocol_violation(m,
+                                                        repr(suback),
+                                                        repr(subscribe.packet()))
+            else:
+                self.__abort_early_packet(suback)
         else:
             raise NotImplementedError(self.state)
 
@@ -1147,26 +1152,32 @@ class Reactor(object):
         ----------
         unsuback: mqtt_codec.packet.MqttUnsuback
         """
-        if self.state is ReactorState.connected:
-            idx = index(self.__inflight_queue,
-                        lambda p: p.packet_type == MqttControlPacketType.unsubscribe and p.packet_id == unsuback.packet_id)
-            if idx is None:
-                unsubscribe = None
+
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(unsuback)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                idx = index(self.__inflight_queue,
+                            lambda p: p.packet_type == MqttControlPacketType.unsubscribe and p.packet_id == unsuback.packet_id)
+                if idx is None:
+                    unsubscribe = None
+                else:
+                    unsubscribe = self.__inflight_queue[idx]
+
+                if unsubscribe is None:
+                    self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
+                                                    repr(unsuback))
+                else:
+                    self.__log.info('Received %s.', repr(unsuback))
+                    unsubscribe._set_status(MqttSubscribeStatus.done)
+
+                    self.__send_path_packet_ids.release(unsubscribe.packet_id)
+                    del self.__inflight_queue[idx]
+
+                    if self.on_unsuback is not None:
+                        self.on_unsuback(self, unsuback)
             else:
-                unsubscribe = self.__inflight_queue[idx]
-
-            if unsubscribe is None:
-                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
-                                                repr(unsuback))
-            else:
-                self.__log.info('Received %s.', repr(unsuback))
-                unsubscribe._set_status(MqttSubscribeStatus.done)
-
-                self.__send_path_packet_ids.release(unsubscribe.packet_id)
-                del self.__inflight_queue[idx]
-
-                if self.on_unsuback is not None:
-                    self.on_unsuback(self, unsuback)
+                self.__abort_early_packet(unsuback)
         else:
             raise NotImplementedError(self.state)
 
@@ -1178,38 +1189,44 @@ class Reactor(object):
         puback: MqttPuback
 
         """
-        if self.state in (ReactorState.connected, ReactorState.mute):
-            idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
-            if idx is None:
-                publish = None
-            else:
-                publish = self.__inflight_queue[idx]
 
-            in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue if hasattr(p, 'packet_id')]
-            if publish and publish.packet_id == puback.packet_id:
-                if publish.qos == 1:
-                    del self.__inflight_queue[idx]
-                    self.__send_path_packet_ids.release(publish.packet_id)
-                    self.__log.info('Received %s.', repr(puback))
-                    publish._set_status(MqttPublishStatus.done)
-
-                    if self.on_puback is not None:
-                        self.on_puback(self, puback)
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(puback)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
+                if idx is None:
+                    publish = None
                 else:
-                    self.__abort_protocol_violation('Received %s, an inappropriate response to qos=%d %s; aborting.',
+                    publish = self.__inflight_queue[idx]
+
+                in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue if hasattr(p, 'packet_id')]
+                if publish and publish.packet_id == puback.packet_id:
+                    if publish.qos == 1:
+                        del self.__inflight_queue[idx]
+                        self.__send_path_packet_ids.release(publish.packet_id)
+                        self.__log.info('Received %s.', repr(puback))
+                        publish._set_status(MqttPublishStatus.done)
+
+                        if self.on_puback is not None:
+                            self.on_puback(self, puback)
+                    else:
+                        self.__abort_protocol_violation('Received %s, an inappropriate response to qos=%d %s; aborting.',
+                                                        ReprOnStr(puback),
+                                                        publish.qos,
+                                                        ReprOnStr(publish))
+                elif publish and puback.packet_id in in_flight_packet_ids:
+                    m = 'Received %s instead of puback for next-in-flight packet_id=%d; aborting.'
+                    self.__abort_protocol_violation(m,
                                                     ReprOnStr(puback),
-                                                    publish.qos,
-                                                    ReprOnStr(publish))
-            elif publish and puback.packet_id in in_flight_packet_ids:
-                m = 'Received %s instead of puback for next-in-flight packet_id=%d; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(puback),
-                                                publish.packet_id)
+                                                    publish.packet_id)
+                else:
+                    m = 'Received %s when packet_id=%d was not in-flight; aborting.'
+                    self.__abort_protocol_violation(m,
+                                                    ReprOnStr(puback),
+                                                    puback.packet_id)
             else:
-                m = 'Received %s when packet_id=%d was not in-flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(puback),
-                                                puback.packet_id)
+                self.__abort_early_packet(puback)
         else:
             raise NotImplementedError(self.state)
 
@@ -1220,45 +1237,50 @@ class Reactor(object):
         ----------
         pubrec: MqttPubrec
         """
-        if self.state is ReactorState.connected:
-            idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
-            if idx is None:
-                publish_ticket = None
-            else:
-                publish_ticket = self.__inflight_queue[idx]
-
-            in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue]
-            if publish_ticket and publish_ticket.packet_id == pubrec.packet_id:
-                if publish_ticket.qos == 2:
-                    del self.__inflight_queue[idx]
-                    self.__log.info('Received %s.', repr(pubrec))
-
-                    insert_idx = len(self.__preflight_queue)
-                    if self.on_pubrec is not None:
-                        self.on_pubrec(self, pubrec)
-
-                    self.__preflight_queue.insert(insert_idx, MqttPubrel(pubrec.packet_id))
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(pubrec)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.publish)
+                if idx is None:
+                    publish_ticket = None
                 else:
-                    publish = MqttPublish(publish_ticket.packet_id,
-                                          publish_ticket.topic,
-                                          publish_ticket.payload,
-                                          publish_ticket.dupe,
-                                          publish_ticket.qos,
-                                          publish_ticket.retain)
-                    self.__abort_protocol_violation('Received unexpected %s in response to qos=%d publish %s; aborting.',
+                    publish_ticket = self.__inflight_queue[idx]
+
+                in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue]
+                if publish_ticket and publish_ticket.packet_id == pubrec.packet_id:
+                    if publish_ticket.qos == 2:
+                        del self.__inflight_queue[idx]
+                        self.__log.info('Received %s.', repr(pubrec))
+
+                        insert_idx = len(self.__preflight_queue)
+                        if self.on_pubrec is not None:
+                            self.on_pubrec(self, pubrec)
+
+                        self.__preflight_queue.insert(insert_idx, MqttPubrel(pubrec.packet_id))
+                    else:
+                        publish = MqttPublish(publish_ticket.packet_id,
+                                              publish_ticket.topic,
+                                              publish_ticket.payload,
+                                              publish_ticket.dupe,
+                                              publish_ticket.qos,
+                                              publish_ticket.retain)
+                        self.__abort_protocol_violation('Received unexpected %s in response to qos=%d publish %s; aborting.',
+                                                        ReprOnStr(pubrec),
+                                                        publish_ticket.qos,
+                                                        ReprOnStr(publish))
+                elif publish_ticket and pubrec.packet_id in in_flight_packet_ids:
+                    m = 'Received unexpected %s when packet_id=%d was next-in-flight; aborting.'
+                    self.__abort_protocol_violation(m,
                                                     ReprOnStr(pubrec),
-                                                    publish_ticket.qos,
-                                                    ReprOnStr(publish))
-            elif publish_ticket and pubrec.packet_id in in_flight_packet_ids:
-                m = 'Received unexpected %s when packet_id=%d was next-in-flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubrec),
-                                                publish_ticket.packet_id)
+                                                    publish_ticket.packet_id)
+                else:
+                    m = 'Received unexpected %s when packet_id=%d was not in-flight; aborting.'
+                    self.__abort_protocol_violation(m,
+                                                    ReprOnStr(pubrec),
+                                                    pubrec.packet_id)
             else:
-                m = 'Received unexpected %s when packet_id=%d was not in-flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubrec),
-                                                pubrec.packet_id)
+                self.__abort_early_packet(pubrec)
         else:
             raise NotImplementedError(self.state)
 
@@ -1270,46 +1292,81 @@ class Reactor(object):
         pubcomp: MqttPubcomp
 
         """
-        if self.state is ReactorState.connected:
-            idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.pubrel)
-            if idx is None:
-                pubrel = None
-            else:
-                pubrel = self.__inflight_queue[idx]
 
-            in_flight_pubrel_packet_ids = [p.packet_id for p in self.__inflight_queue if p.packet_type is MqttControlPacketType.pubrel]
-            if pubrel and pubrel.packet_id == pubcomp.packet_id:
-                del self.__inflight_queue[idx]
-                self.__log.info('Received %s.', repr(pubcomp))
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(pubcomp)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                idx = index(self.__inflight_queue, lambda p: p.packet_type is MqttControlPacketType.pubrel)
+                if idx is None:
+                    pubrel = None
+                else:
+                    pubrel = self.__inflight_queue[idx]
 
-                if self.on_pubcomp is not None:
-                    self.on_pubcomp(self, pubcomp)
-            elif pubrel and pubcomp.packet_id in in_flight_pubrel_packet_ids:
-                m = 'Received %s when packet_id=%d was the next pubrel in flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubcomp),
-                                                pubrel.packet_id)
+                in_flight_pubrel_packet_ids = [p.packet_id for p in self.__inflight_queue if p.packet_type is MqttControlPacketType.pubrel]
+                if pubrel and pubrel.packet_id == pubcomp.packet_id:
+                    del self.__inflight_queue[idx]
+                    self.__log.info('Received %s.', repr(pubcomp))
+
+                    if self.on_pubcomp is not None:
+                        self.on_pubcomp(self, pubcomp)
+                elif pubrel and pubcomp.packet_id in in_flight_pubrel_packet_ids:
+                    m = 'Received %s when packet_id=%d was the next pubrel in flight; aborting.'
+                    self.__abort_protocol_violation(m,
+                                                    ReprOnStr(pubcomp),
+                                                    pubrel.packet_id)
+                else:
+                    m = 'Received %s when no pubrel for packet_id=%d was in-flight; aborting.'
+                    self.__abort_protocol_violation(m,
+                                                    ReprOnStr(pubcomp),
+                                                    pubcomp.packet_id)
             else:
-                m = 'Received %s when no pubrel for packet_id=%d was in-flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubcomp),
-                                                pubcomp.packet_id)
+                self.__abort_early_packet(pubcomp)
         else:
             raise NotImplementedError(self.state)
 
     def __on_pubrel(self, pubrel):
         """
 
+        Part of QoS=2 receive path.
+
         Parameters
         ----------
         pubrel: MqttPubrel
 
         """
-        if self.state is ReactorState.connected:
-            self.__log.info('Received %s.', repr(pubrel))
-            if self.on_pubrel is not None:
-                self.on_pubrel(self, pubrel)
-            self.__preflight_queue.append(MqttPubcomp(pubrel.packet_id))
+
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(pubrel)
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__recveived_connack:
+                self.__log.info('Received %s.', repr(pubrel))
+                if self.on_pubrel is not None:
+                    self.on_pubrel(self, pubrel)
+                self.__preflight_queue.append(MqttPubcomp(pubrel.packet_id))
+            else:
+                self.__abort_early_packet(pubrel)
+        else:
+            raise NotImplementedError(self.state)
+
+    def __on_pingreq(self, pingreq):
+        """
+
+        Parameters
+        ----------
+        pingreq: MqttPingreq
+        """
+
+        if self.state is ReactorState.connack:
+            self.__abort_early_packet(pingreq)
+        elif self.state is ReactorState.connected:
+            self.__log.info('Received %s.', repr(pingreq))
+            self.__preflight_queue.append(MqttPingresp())
+        elif self.state is ReactorState.mute:
+            if self.__recveived_connack:
+                self.__log.info('Received %s; ignoring because muted.', repr(pingreq))
+            else:
+                self.__abort_early_packet(pingreq)
         else:
             raise NotImplementedError(self.state)
 
@@ -1322,13 +1379,13 @@ class Reactor(object):
         """
 
         if self.state is ReactorState.connack:
-            self.__abort_protocol_violation('Unsolicited pingresp received before connack. [MQTT-3.2.0-1]')
+            self.__abort_early_packet(pingresp)
         elif self.state in (ReactorState.connected, ReactorState.mute):
-            if self.__pingreq_active:
+            if self.__recveived_connack:
                 self.__log.info('Received %s.', repr(pingresp))
                 self.__pingreq_active = False
             else:
-                self.__log.info('Received unsolicited %s; Ignoring.', repr(pingresp))
+                self.__abort_early_packet(pingresp)
         else:
             raise NotImplementedError(self.state)
 
@@ -1620,6 +1677,9 @@ class Reactor(object):
                          errno.errorcode[se.errno],
                          se.errno)
         self.__abort(se)
+
+    def __abort_early_packet(self, p):
+        self.__abort_protocol_violation('Received %s before connack. [MQTT-3.2.0-1]', repr(p))
 
     def __abort_protocol_violation(self, m, *params):
         self.__log.error(m, *params)

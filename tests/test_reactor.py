@@ -376,13 +376,13 @@ class TestReactor(unittest.TestCase):
         """
 
         # Push subscribe onto the wire.
-        self.assertEqual(set(), self.reactor.active_send_packet_ids())
+        self.assertEqual(set(), self.reactor.send_packet_ids())
         subscribe = MqttSubscribe(0, topics)
         subscribe_ticket = self.reactor.subscribe(subscribe.topics)
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()
         self.assertEqual(subscribe_ticket.status, MqttSubscribeStatus.preflight)
-        self.assertEqual({subscribe.packet_id}, self.reactor.active_send_packet_ids())
+        self.assertEqual({subscribe.packet_id}, self.reactor.send_packet_ids())
 
         # Allow reactor to push subscribe onto the wire.
         self.set_send_packet_side_effect(subscribe)
@@ -399,7 +399,7 @@ class TestReactor(unittest.TestCase):
         self.assertEqual(subscribe_ticket.status, MqttSubscribeStatus.done)
         self.on_suback.assert_called_once_with(self.reactor, suback)
         self.on_suback.reset_mock()
-        self.assertEqual(set(), self.reactor.active_send_packet_ids())
+        self.assertEqual(set(), self.reactor.send_packet_ids())
 
 
 class TestDnsResolution(TestReactor, unittest.TestCase):
@@ -709,7 +709,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual(1, len(self.reactor.active_send_packet_ids()))
+        self.assertEqual(1, len(self.reactor.send_packet_ids()))
         self.socket.send.assert_not_called()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
 
@@ -726,7 +726,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual(set(), self.reactor.active_send_packet_ids())
+        self.assertEqual(set(), self.reactor.send_packet_ids())
 
         self.reactor.terminate()
 
@@ -766,7 +766,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0}, self.reactor.send_packet_ids())
 
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
@@ -781,7 +781,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0}, self.reactor.send_packet_ids())
 
         return publish_ticket
 
@@ -797,7 +797,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.connected, self.reactor.state)
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual(set(), self.reactor.active_send_packet_ids())
+        self.assertEqual(set(), self.reactor.send_packet_ids())
 
         self.reactor.terminate()
 
@@ -816,7 +816,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(ept1, pt1)
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0, 1}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0, 1}, self.reactor.send_packet_ids())
 
         # Allow reactor to put pt1 in-flight.
         publish = MqttPublish(1, pt1.topic, pt1.payload, pt1.dupe, pt1.qos, pt1.retain)
@@ -832,7 +832,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.connected, self.reactor.state)
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(2, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0, 1}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0, 1}, self.reactor.send_packet_ids())
 
         # Send a puback for pt1 to the reactor before a puback for pt0
         # is sent.  This is a violation of [MQTT-4.6.0-2].
@@ -866,7 +866,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(self.reactor.state, ReactorState.error)
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual(set(), self.reactor.active_send_packet_ids())
+        self.assertEqual(set(), self.reactor.send_packet_ids())
 
     def test_publish_disconnect_connect_republish_qos1(self):
         # CHECKED-KC0 (2018-09-17)
@@ -887,7 +887,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertTrue(publish_ticket.dupe)  # dupe flag set on publish ticket.
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0}, self.reactor.send_packet_ids())
 
         # Socket connects and reactor sends a MqttConnect packet.
         publish = publish_ticket.packet()
@@ -902,7 +902,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.active_send_packet_ids())
+        self.assertEqual({0}, self.reactor.send_packet_ids())
         self.assertTrue(publish_ticket.dupe)
         self.assertEqual(self.reactor.state, ReactorState.connected)
         self.socket.send.assert_not_called()

@@ -11,7 +11,7 @@ from enum import (
 )
 
 from haka_mqtt.clock import SystemClock
-from haka_mqtt.cycle_iter import IntegralCycleIter
+from haka_mqtt.packet_ids import PacketIdGenerator
 from haka_mqtt.selector import Selector
 from mqtt_codec.io import (
     UnderflowDecodeError,
@@ -100,7 +100,6 @@ class ReactorState(IntEnum):
     * :py:const:`ReactorState.handshake`
     * :py:const:`ReactorState.connack`
     * :py:const:`ReactorState.connected`
-    * :py:const:`ReactorState.stopping`
 
     """
     init = 0
@@ -310,10 +309,10 @@ class Reactor(object):
     on_connect_fail: callable
     on_disconnect: callable
     on_connack: callable
-
+    on_suback: callable
+    on_unsuback: callable
     on_pubrec: callable
     on_pubcomp: callable
-    on_suback: callable
     on_publish: callable
     on_puback: callable
     on_pubrel: callable
@@ -359,7 +358,7 @@ class Reactor(object):
         self.__error = None
 
         self.__send_packet_ids = set()
-        self.__send_path_packet_id_iter = IntegralCycleIter(0, 2 ** 16)
+        self.__send_path_packet_ids = PacketIdGenerator()
 
         self.__preflight_queue = []
         self.__inflight_queue = []
@@ -394,11 +393,10 @@ class Reactor(object):
 
         # Subscribe path
         self.on_suback = None
+        self.on_unsuback = None
 
         # Receive path
         self.on_publish = None
-        # TODO: Find place for this documentation.
-        # on_puback(puback); at time of call the associated MqttPublishTicket will have status set to done.
         self.on_puback = None
         self.on_pubrel = None
 
@@ -488,8 +486,15 @@ class Reactor(object):
         if self.state is ReactorState.error:
             assert self.error is not None
 
-    def active_send_packet_ids(self):
-        return set(self.__send_packet_ids)
+    def send_packet_ids(self):
+        """
+
+        Returns
+        -------
+        set[int]
+            A set of active send-path packet ids.
+        """
+        return set(self.__send_path_packet_ids)
 
     def in_flight_packets(self):
         return list(self.__inflight_queue)
@@ -504,6 +509,12 @@ class Reactor(object):
         ----------
         topics: iterable of MqttTopic
 
+        Raises
+        ------
+        haka_mqtt.exception.PacketIdReactorException
+            Raised when there are no free packet ids to create a
+            `MqttSubscribe` packet with.
+
         Returns
         --------
         MqttSubscribeTicket
@@ -512,17 +523,12 @@ class Reactor(object):
 
         self.__assert_state_rules()
 
-        req = MqttSubscribeTicket(self.__acquire_packet_id(), topics)
+        req = MqttSubscribeTicket(self.__send_path_packet_ids.acquire(), topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
         self.__update_io_notification()
         return req
-
-    def __acquire_packet_id(self):
-        packet_id = next(self.__send_path_packet_id_iter)
-        self.__send_packet_ids.add(packet_id)
-        return packet_id
 
     def unsubscribe(self, topics):
         """
@@ -530,6 +536,12 @@ class Reactor(object):
         Parameters
         ----------
         topics: iterable of str
+
+        Raises
+        ------
+        haka_mqtt.exception.PacketIdReactorException
+            Raised when there are no free packet ids to create a
+            `MqttUnsubscribe` packet with.
 
         Returns
         --------
@@ -539,7 +551,7 @@ class Reactor(object):
 
         self.__assert_state_rules()
 
-        req = MqttUnsubscribeRequest(self.__acquire_packet_id(), topics)
+        req = MqttUnsubscribeRequest(self.__send_path_packet_ids.acquire(), topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
@@ -559,6 +571,12 @@ class Reactor(object):
             0 <= qos <= 2
         retain: bool
 
+        Raises
+        ------
+        haka_mqtt.exception.PacketIdReactorException
+            Raised when there are no free packet ids to create a
+            `MqttPublish` packet with.
+
         Return
         -------
         MqttPublishTicket
@@ -566,7 +584,7 @@ class Reactor(object):
         self.__assert_state_rules()
         assert 0 <= qos <= 2
 
-        req = MqttPublishTicket(self.__acquire_packet_id(), topic, payload, qos, retain)
+        req = MqttPublishTicket(self.__send_path_packet_ids.acquire(), topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
         self.__update_io_notification()
@@ -1094,7 +1112,7 @@ class Reactor(object):
                     self.__log.info('Received %s.', repr(suback))
                     subscribe._set_status(MqttSubscribeStatus.done)
 
-                    self.__send_packet_ids.remove(subscribe.packet_id)
+                    self.__send_path_packet_ids.release(subscribe.packet_id)
                     del self.__inflight_queue[idx]
 
                     if self.on_suback is not None:
@@ -1105,6 +1123,36 @@ class Reactor(object):
                     self.__abort_protocol_violation(m,
                                                     repr(suback),
                                                     repr(subscribe.packet()))
+        else:
+            raise NotImplementedError(self.state)
+
+    def __on_unsuback(self, unsuback):
+        """Called when a suback packet is received from remote.
+
+        Parameters
+        ----------
+        unsuback: mqtt_codec.packet.MqttUnsuback
+        """
+        if self.state is ReactorState.connected:
+            idx = index(self.__inflight_queue,
+                        lambda p: p.packet_type == MqttControlPacketType.unsubscribe and p.packet_id == unsuback.packet_id)
+            if idx is None:
+                unsubscribe = None
+            else:
+                unsubscribe = self.__inflight_queue[idx]
+
+            if unsubscribe is None:
+                self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
+                                                repr(unsuback))
+            else:
+                self.__log.info('Received %s.', repr(unsuback))
+                unsubscribe._set_status(MqttSubscribeStatus.done)
+
+                self.__send_path_packet_ids.release(unsubscribe.packet_id)
+                del self.__inflight_queue[idx]
+
+                if self.on_unsuback is not None:
+                    self.on_unsuback(self, unsuback)
         else:
             raise NotImplementedError(self.state)
 
@@ -1127,7 +1175,7 @@ class Reactor(object):
             if publish and publish.packet_id == puback.packet_id:
                 if publish.qos == 1:
                     del self.__inflight_queue[idx]
-                    self.__send_packet_ids.remove(publish.packet_id)
+                    self.__send_path_packet_ids.release(publish.packet_id)
                     self.__log.info('Received %s.', repr(puback))
                     publish._set_status(MqttPublishStatus.done)
 
@@ -1343,7 +1391,7 @@ class Reactor(object):
             #     pass
             if packet_record.packet_type is MqttControlPacketType.publish:
                 if packet_record.qos == 0:
-                    self.__send_packet_ids.remove(packet_record.packet_id)
+                    self.__send_path_packet_ids.release(packet_record.packet_id)
                     packet_record._set_status(MqttPublishStatus.done)
                 elif packet_record.qos == 1:
                     packet_record._set_status(MqttPublishStatus.puback)

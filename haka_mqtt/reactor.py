@@ -813,19 +813,15 @@ class Reactor(object):
             else:
                 self.__log.info('Stop request while already stopping.')
         elif self.state is ReactorState.connecting:
-            if self.enable:
-                self.__log.info('Stopping.')
-                self.__enable = False
-                self.__terminate(ReactorState.stopped, None)
-            else:
-                self.__log.info('Stop request while already stopping.')
+            assert self.enable is True
+            self.__log.info('Stopping.')
+            self.__enable = False
+            self.__terminate(ReactorState.stopped, None)
         elif self.state is ReactorState.handshake:
-            if self.enable:
-                self.__log.info('Stopping.')
-                self.__enable = False
-                self.__terminate(ReactorState.stopped, None)
-            else:
-                self.__log.info('Stop request while already stopping.')
+            assert self.enable is True
+            self.__log.info('Stopping.')
+            self.__enable = False
+            self.__terminate(ReactorState.stopped, None)
         elif self.state in (ReactorState.connack, ReactorState.connected):
             if self.enable:
                 self.__log.info('Stopping.')
@@ -833,8 +829,9 @@ class Reactor(object):
                 self.__preflight_queue.append(MqttDisconnect())
             else:
                 self.__log.info('Stop request while already stopping.')
-        # elif self.state is ReactorState.mute:
-        #     self.__log.info('Stop.')
+        elif self.state is ReactorState.mute:
+            assert self.enable is False
+            self.__log.info('Stop request while already stopping.')
         elif self.state is ReactorState.stopped:
             assert self.enable is False
             self.__log.warning('Stop while already stopped.')

@@ -1414,6 +1414,13 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.reactor.stop()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
+    def test_handshake(self):
+        self.start_to_handshake()
+
+        # Stop should have immediate effect at this point.
+        self.reactor.stop()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
+
     def test_connack_empty_preflight(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
 
@@ -1509,11 +1516,34 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
-    def test_stopping(self):
-        pass
+    def test_connected_double_stop(self):
+        self.start_to_connected()
+        self.assertTrue(self.reactor.enable)
+        self.reactor.stop()
+        self.assertFalse(self.reactor.enable)
+        self.reactor.stop()
+        self.assertFalse(self.reactor.enable)
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_eof()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_mute(self):
-        pass
+        self.start_to_connected()
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+        self.reactor.stop()
+
+        self.recv_eof()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
 
     def test_stopped(self):
         self.reactor.stop()

@@ -374,10 +374,11 @@ class Reactor(object):
         # received (QoS 2 messages) [MQTT-4.6.0-4]
         #self.__in_flight_pubrel = []
 
-        self.__ping_active = False
         self.__scheduler = properties.scheduler
 
         self.__will = None
+
+        self.__pingreq_active = False
 
         # Want read
         self.__selector = _AssertSelectAdapter(self, properties.selector)
@@ -469,6 +470,10 @@ class Reactor(object):
     def __assert_state_rules(self):
         if self.want_write() or self.want_read():
             assert self.socket is not None
+
+        if self.state in ACTIVE_STATES:
+            if self.state not in (ReactorState.connected, ReactorState.mute):
+                assert self.__pingreq_active is False
 
         if self.state in INACTIVE_STATES:
             assert self.__keepalive_due_deadline is None
@@ -602,7 +607,7 @@ class Reactor(object):
         self.__ssl_want_write = False
         self.__ssl_want_read = False
 
-        self.__ping_active = False
+        self.__pingreq_active = False
 
         preflight_queue = []
         for p in self.__inflight_queue:
@@ -909,9 +914,9 @@ class Reactor(object):
                 self.__keepalive_due_deadline = None
             self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
-            self.__keepalive_abort_deadline.cancel()
-            self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
-                                                                   self.__keepalive_abort_timeout)
+        self.__keepalive_abort_deadline.cancel()
+        self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
+                                                               self.__keepalive_abort_timeout)
 
         self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
@@ -932,9 +937,8 @@ class Reactor(object):
                     self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
                 elif header.packet_type == MqttControlPacketType.pingresp:
                     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
-                # TODO:
-                # elif header.packet_type == MqttControlPacketType.pingreq:
-                #     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
+                elif header.packet_type == MqttControlPacketType.pingreq:
+                    self.__on_pingreq(self.__decode_packet_body(header, num_header_bytes, MqttPingreq))
                 elif header.packet_type == MqttControlPacketType.pubrel:
                     self.__on_pubrel(self.__decode_packet_body(header, num_header_bytes, MqttPubrel))
                 elif header.packet_type == MqttControlPacketType.pubcomp:
@@ -1052,7 +1056,7 @@ class Reactor(object):
             else:
                 raise NotImplementedError(connack.return_code)
         elif self.state is ReactorState.connected:
-            self.__abort_protocol_violation('Received connack at an inappropriate time.')
+            self.__abort_protocol_violation('Received connack at an inappropriate time.  [MQTT-3.2.0-1]')
         else:
             raise NotImplementedError(self.state)
 
@@ -1308,15 +1312,15 @@ class Reactor(object):
         ----------
         pingresp: MqttPingresp
         """
-        if self.state is ReactorState.connected:
-            self.__log.info('Received %s.', repr(pingresp))
-        # TODO: Verify handling in these other states.
-        # elif self.state is ReactorState.connack:
-        #     pass
-        # elif self.state is ReactorState.stopping:
-        #     pass
-        # elif self.state is ReactorState.mute:
-        #     pass
+
+        if self.state is ReactorState.connack:
+            self.__abort_protocol_violation('Unsolicited pingresp received before connack. [MQTT-3.2.0-1]')
+        elif self.state in (ReactorState.connected, ReactorState.mute):
+            if self.__pingreq_active:
+                self.__log.info('Received %s.', repr(pingresp))
+                self.__pingreq_active = False
+            else:
+                self.__log.info('Received unsolicited %s; Ignoring.', repr(pingresp))
         else:
             raise NotImplementedError(self.state)
 
@@ -1629,7 +1633,13 @@ class Reactor(object):
             ReactorState.connected,
         )
 
-        self.__preflight_queue.append(MqttPingreq())
+        if not self.__inflight_queue and not self.__preflight_queue:
+            # Only launch ping request if there are no existing messages
+            # in queue that could serve the same function.
+            self.__pingreq_active = True
+            self.__preflight_queue.append(MqttPingreq())
+
+        self.__keepalive_due_deadline.cancel()
         self.__keepalive_due_deadline = None
 
         self.__assert_state_rules()

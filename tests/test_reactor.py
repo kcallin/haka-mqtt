@@ -31,7 +31,7 @@ from mqtt_codec.packet import (
     MqttPubrel,
     MqttPubcomp,
     MqttPingreq,
-    MqttDisconnect, MqttWill, MqttUnsubscribe, MqttUnsuback)
+    MqttDisconnect, MqttWill, MqttUnsubscribe, MqttUnsuback, MqttPingresp)
 from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus, MqttSubscribeTicket, \
     MqttUnsubscribeTicket
 from haka_mqtt.reactor import (
@@ -39,7 +39,8 @@ from haka_mqtt.reactor import (
     ReactorProperties,
     ReactorState,
     KeepaliveTimeoutReactorError,
-    ConnectReactorError, INACTIVE_STATES, SocketReactorError, AddressReactorError, DecodeReactorError)
+    ConnectReactorError, INACTIVE_STATES, SocketReactorError, AddressReactorError, DecodeReactorError,
+    ProtocolReactorError)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -1497,7 +1498,7 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.error, self.reactor.state)
 
 
-class TestPingresp(TestReactor, unittest.TestCase):
+class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
     def test_handshake(self):
         # Start with async connect
         self.start_to_handshake()
@@ -1521,16 +1522,6 @@ class TestPingresp(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
 
-    def test_stopping(self):
-        self.start_to_connected()
-        self.reactor.stop()
-        # TODO: Verify stopping state is used/entered correctly.
-        # self.assertEqual(ReactorState.stopping, self.reactor.state)
-
-        self.scheduler.poll(self.reactor.keepalive_timeout_period)
-        self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
-
     def test_mute(self):
         self.start_to_connected()
         self.reactor.stop()
@@ -1543,3 +1534,82 @@ class TestPingresp(TestReactor, unittest.TestCase):
         self.scheduler.poll(self.reactor.keepalive_timeout_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+
+
+class TestPingreqPingresp(TestReactor, unittest.TestCase):
+    def test_connack(self):
+        # Start with async connect
+        self.start_to_connack()
+
+        # Verify waiting for connack and no writes are needed
+        self.assertEqual(ReactorState.connack, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
+
+        # Before a connack is received no pingreq should be sent.
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertFalse(self.reactor.want_write())
+
+        # A pingreq is an error at this point.
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+
+    def test_connected(self):
+        self.start_to_connected()
+
+        # Send pingreq
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.send_packet(MqttPingreq())
+
+        # Feed pingresp
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        # There have been `2 x keepalive_periods` that have passed in
+        # the test.  Since `keepalive_timeout_period = 1.5 x keepalive_period`
+        # then a keepalive error would have resulted if the pingresp
+        # were not processed accurately.
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        self.reactor.terminate()
+
+    def test_connected_unsolicited_pingresp(self):
+        self.start_to_connected()
+
+        # Feed unsolicited pingresp; should be ignored.
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+
+        self.reactor.terminate()
+
+    def test_mute(self):
+        self.start_to_connected()
+
+        # Send pingreq
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.send_packet(MqttPingreq())
+
+        # Reactor is stopped before receiving the pingresp.
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        # Feed pingresp
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        # There have been `2 x keepalive_periods` that have passed in
+        # the test.  Since `keepalive_timeout_period = 1.5 x keepalive_period`
+        # then a keepalive error would have resulted if the pingresp
+        # were not processed accurately.
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_mute()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)

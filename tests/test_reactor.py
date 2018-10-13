@@ -1481,6 +1481,22 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 
+    def test_recv_double_connack_while_mute(self):
+        self.start_to_connack()
+        self.reactor.stop()
+
+        disconnect = MqttDisconnect()
+        self.send_packet(disconnect)
+
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_packet_then_ewouldblock(MqttConnack(False, ConnackResult.accepted))
+        self.assertEqual(ReactorState.mute, self.reactor.state)
+
+        self.recv_packet_then_ewouldblock(MqttConnack(False, ConnackResult.accepted))
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+
     def test_connected_with_empty_preflight(self):
         self.start_to_connected()
         self.reactor.stop()

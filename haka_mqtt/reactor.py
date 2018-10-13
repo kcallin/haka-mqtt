@@ -109,10 +109,9 @@ class ReactorState(IntEnum):
     handshake = 3
     connack = 4
     connected = 5
-    stopping = 6
-    mute = 7
-    stopped = 8
-    error = 9
+    mute = 6
+    stopped = 7
+    error = 8
 
 
 # States where there are no active deadlines, the socket is closed and there
@@ -128,7 +127,6 @@ ACTIVE_STATES = (
     ReactorState.handshake,
     ReactorState.connack,
     ReactorState.connected,
-    ReactorState.stopping,
     ReactorState.mute,
 )
 
@@ -753,7 +751,7 @@ class Reactor(object):
             self.__log.warning("Start while already connecting to server; taking no additional action.")
         elif self.state is ReactorState.connected:
             self.__log.warning("Start while already connected; taking no action.")
-        elif self.state in (ReactorState.stopping, ReactorState.mute):
+        elif self.state in (ReactorState.mute,):
             self.__log.warning("Start while already stopping; stop process cannot be aborted.")
         else:
             raise NotImplementedError(self.state)
@@ -1523,7 +1521,7 @@ class Reactor(object):
                     if e.errno == errno.ENOTCONN:
                         pass
                     else:
-                        raise
+                        raise NotImplementedError(e)
                 self.socket.close()
         else:
             on_disconnect_cb = None

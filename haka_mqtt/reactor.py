@@ -2,7 +2,6 @@ import errno
 import socket
 import logging
 import ssl
-from binascii import b2a_hex
 from io import BytesIO
 import os
 
@@ -310,27 +309,18 @@ class Reactor(object):
     ----------
     properties: ReactorProperties
 
-    standard_preflight_queue
-    prompt_preflight_queue
-    flight_queue
-
-       ---pub(1) ---->
-       <--pubrec(1)---
-
-    send_queue
-
     Attributes
     -----------
     on_connect_fail: callable
     on_disconnect: callable
     on_connack: callable
+
     on_pubrec: callable
     on_pubcomp: callable
     on_suback: callable
     on_publish: callable
     on_puback: callable
     on_pubrel: callable
-
     """
     def __init__(self, properties):
         assert properties.client_id is not None

@@ -33,10 +33,10 @@ from mqtt_codec.packet import (
     MqttPingreq,
     MqttPingresp,
     MqttDisconnect,
-    MqttWill)
+    MqttWill, MqttUnsuback)
 from haka_mqtt.mqtt_request import (
     MqttSubscribeTicket,
-    MqttUnsubscribeRequest,
+    MqttUnsubscribeTicket,
     MqttPublishTicket,
     MqttPublishStatus,
     MqttSubscribeStatus,
@@ -545,13 +545,13 @@ class Reactor(object):
 
         Returns
         --------
-        MqttUnsubscribeRequest
+        MqttUnsubscribeTicket
         """
         assert self.state == ReactorState.connected
 
         self.__assert_state_rules()
 
-        req = MqttUnsubscribeRequest(self.__send_path_packet_ids.acquire(), topics)
+        req = MqttUnsubscribeTicket(self.__send_path_packet_ids.acquire(), topics)
         self.__preflight_queue.append(req)
 
         self.__assert_state_rules()
@@ -924,6 +924,8 @@ class Reactor(object):
                     self.__on_connack(self.__decode_packet_body(header, num_header_bytes, MqttConnack))
                 elif header.packet_type == MqttControlPacketType.suback:
                     self.__on_suback(self.__decode_packet_body(header, num_header_bytes, MqttSuback))
+                elif header.packet_type == MqttControlPacketType.unsuback:
+                    self.__on_unsuback(self.__decode_packet_body(header, num_header_bytes, MqttUnsuback))
                 elif header.packet_type == MqttControlPacketType.puback:
                     self.__on_puback(self.__decode_packet_body(header, num_header_bytes, MqttPuback))
                 elif header.packet_type == MqttControlPacketType.publish:

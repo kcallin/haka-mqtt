@@ -220,7 +220,8 @@ class MqttSubscribeTicket(MqttRequest):
             and self.status == other.status
         )
 
-class MqttUnsubscribeRequest(MqttRequest):
+
+class MqttUnsubscribeTicket(MqttRequest):
     """
     Parameters
     ----------
@@ -229,7 +230,7 @@ class MqttUnsubscribeRequest(MqttRequest):
     """
 
     def __init__(self, packet_id, topics):
-        super(MqttUnsubscribeRequest, self).__init__(packet_id, MqttControlPacketType.unsubscribe)
+        super(MqttUnsubscribeTicket, self).__init__(packet_id, MqttControlPacketType.unsubscribe)
 
         self.topics = tuple(topics)
 
@@ -259,5 +260,15 @@ class MqttUnsubscribeRequest(MqttRequest):
         return self.__status
 
     def encode(self, f):
-        p = MqttUnsubscribe(self.packet_id, self.topics)
-        return p.encode(f)
+        return self.packet().encode(f)
+
+    def packet(self):
+        return MqttUnsubscribe(self.packet_id, self.topics)
+
+    def __eq__(self, other):
+        return (
+            hasattr(other, 'topics')
+            and self.topics == other.topics
+            and hasattr(other, 'status')
+            and self.status == other.status
+        )

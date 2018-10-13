@@ -31,8 +31,9 @@ from mqtt_codec.packet import (
     MqttPubrel,
     MqttPubcomp,
     MqttPingreq,
-    MqttDisconnect, MqttWill)
-from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus, MqttSubscribeTicket
+    MqttDisconnect, MqttWill, MqttUnsubscribe, MqttUnsuback)
+from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSubscribeStatus, MqttSubscribeTicket, \
+    MqttUnsubscribeTicket
 from haka_mqtt.reactor import (
     Reactor,
     ReactorProperties,
@@ -141,6 +142,7 @@ class TestReactor(unittest.TestCase):
         self.on_connack = Mock()
         self.on_puback = Mock()
         self.on_suback = Mock()
+        self.on_unsuback = Mock()
 
         self.properties = self.reactor_properties()
         self.reactor = Reactor(self.properties)
@@ -151,6 +153,7 @@ class TestReactor(unittest.TestCase):
         self.reactor.on_pubrec = self.on_pubrec
         self.reactor.on_puback = self.on_puback
         self.reactor.on_suback = self.on_suback
+        self.reactor.on_unsuback = self.on_unsuback
         self.reactor.on_connect_fail = self.on_connect_fail
         self.reactor.on_disconnect = self.on_disconnect
 
@@ -676,6 +679,44 @@ class TestSubscribePath(TestReactor, unittest.TestCase):
         sp = MqttSuback(0, [SubscribeResult.qos1])
         self.recv_packet_then_ewouldblock(sp)
         self.assertEqual(ReactorState.error, self.reactor.state)
+
+        self.reactor.terminate()
+
+
+class TestUnsubscribePath(TestReactor, unittest.TestCase):
+    def start_to_unsubscribe(self):
+        self.start_to_connected()
+
+        # Create subscribe
+        topics = [
+            'topic1',
+            'topic2',
+        ]
+        eut = MqttUnsubscribeTicket(0, topics)
+        unsubscribe_ticket = self.reactor.unsubscribe(topics)
+        self.assertEqual(eut, unsubscribe_ticket)
+
+        self.send_packet(MqttUnsubscribe(eut.packet_id, eut.topics))
+
+    def test_unsubscribe(self):
+        self.start_to_unsubscribe()
+        self.on_unsuback.assert_not_called()
+
+        up = MqttUnsuback(0)
+        self.recv_packet_then_ewouldblock(up)
+        self.assertEqual(ReactorState.connected, self.reactor.state)
+        self.on_unsuback.assert_called_once()
+
+        self.reactor.terminate()
+
+    def test_unsubscribe_bad_suback_packet_id(self):
+        self.start_to_unsubscribe()
+        self.on_unsuback.assert_not_called()
+
+        up = MqttUnsuback(1)
+        self.recv_packet_then_ewouldblock(up)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.on_disconnect.assert_called_once()
 
         self.reactor.terminate()
 

@@ -766,6 +766,7 @@ class Reactor(object):
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:
                 # Connection in progress.
+                self.__update_io_notification()
                 self.__log.info("Connecting.")
             else:
                 self.__abort_socket_error(SocketReactorError(e.errno))
@@ -1550,6 +1551,7 @@ class Reactor(object):
                               password=self.__password)
         self.__preflight_queue.insert(0, connect)
         self.__launch_next_queued_packet()
+        self.__update_io_notification()
 
     def __set_handshake(self):
         assert self.state in (ReactorState.connecting, ReactorState.handshake)
@@ -1559,13 +1561,16 @@ class Reactor(object):
 
         try:
             self.socket.do_handshake()
-            self.__set_connack()
         except ssl.SSLWantReadError:
             self.__ssl_want_read = True
+            self.__update_io_notification()
         except ssl.SSLWantWriteError:
             self.__ssl_want_write = True
+            self.__update_io_notification()
         except socket.error as e:
             self.__abort(e)
+        else:
+            self.__set_connack()
 
     def __on_connect(self):
         """Called when a socket becomes connected; reactor must be in

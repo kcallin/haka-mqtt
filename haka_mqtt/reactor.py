@@ -97,7 +97,6 @@ class MqttState(IntEnum):
     Inactive States:
 
     * :py:const:`ReactorState.stopped`
-    * :py:const:`ReactorState.error`
 
     """
     connack = 0
@@ -120,16 +119,16 @@ class SocketState(IntEnum):
 
     Active States:
 
-    * :py:const:`ReactorState.name_resolution`
-    * :py:const:`ReactorState.connecting`
-    * :py:const:`ReactorState.handshake`
-    * :py:const:`ReactorState.connected`
-    * :py:const:`ReactorState.deaf`
-    * :py:const:`ReactorState.mute`
+    * :py:const:`SocketState.name_resolution`
+    * :py:const:`SocketState.connecting`
+    * :py:const:`SocketState.handshake`
+    * :py:const:`SocketState.connected`
+    * :py:const:`SocketState.deaf`
+    * :py:const:`SocketState.mute`
 
     Inactive States:
 
-    * :py:const:`ReactorState.stopped`
+    * :py:const:`SocketState.stopped`
 
     """
     name_resolution = 1
@@ -565,28 +564,34 @@ class Reactor(object):
             raise TypeError()
 
     def __update_io_notification(self):
-        self.__selector.update(self.want_read(), self.want_write(), self.socket)
+        if self.socket is not None:
+            self.__selector.update(self.want_read(), self.want_write(), self.socket)
 
     def __assert_state_rules(self):
         if self.want_write() or self.want_read():
             assert self.socket is not None
 
-        if self.state in ACTIVE_STATES:
-            if self.state not in (ReactorState.connected, ReactorState.mute):
-                assert self.__pingreq_active is False
+        if self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.handshake, SocketState.stopped):
+            assert self.__pingreq_active is False
 
-        if self.state in INACTIVE_STATES:
-            assert self.__keepalive_due_deadline is None
+        if self.sock_state not in (SocketState.connected, SocketState.deaf, SocketState.mute):
+            assert self.__pingreq_active is False
+
+        if self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute, SocketState.deaf):
+            assert self.__keepalive_abort_deadline is not None
+        elif self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.stopped):
             assert self.__keepalive_abort_deadline is None
+        else:
+            raise NotImplementedError(self.sock_state)
+
+        if self.sock_state is not SocketState.connected:
+            assert self.__keepalive_due_deadline is None
+
+        if self.sock_state in INACTIVE_SOCKET_STATES:
             self.__selector.assert_closed()
 
-        if self.state in (ReactorState.name_resolution,
-                          ReactorState.connecting):
-            assert self.__keepalive_due_deadline is None
-            assert self.__keepalive_abort_deadline is None
-
+        # Try this
         if self.state is ReactorState.mute:
-            assert self.__keepalive_due_deadline is None
             assert self.enable is False
 
         if self.state is ReactorState.error:
@@ -1155,7 +1160,7 @@ class Reactor(object):
         elif self.mqtt_state is MqttState.connected:
             self.__abort_protocol_violation('Received connack at an inappropriate time.  [MQTT-3.2.0-1]')
         else:
-            raise NotImplementedError(self.state)
+            raise NotImplementedError(self.mqtt_state)
 
     def __on_publish(self, publish):
         """Called when a publish packet is received from the remote.
@@ -1430,14 +1435,15 @@ class Reactor(object):
         ----------
         pingreq: MqttPingreq
         """
+        assert self.sock_state in (SocketState.connected, SocketState.mute)
 
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pingreq)
         elif self.mqtt_state is MqttState.connected:
-            if self.state is ReactorState.connected:
+            if self.sock_state is SocketState.connected:
                 self.__log.info('Received %s.', repr(pingreq))
                 self.__preflight_queue.append(MqttPingresp())
-            elif self.state is ReactorState.mute:
+            elif self.sock_state is SocketState.mute:
                 self.__log.info('Received %s; ignoring because muted.', repr(pingreq))
             else:
                 raise NotImplementedError(self.state)
@@ -1461,8 +1467,19 @@ class Reactor(object):
             raise NotImplementedError(self.mqtt_state)
 
     def __on_muted_remote(self):
+        assert self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute)
+
         if self.sock_state in (SocketState.handshake, SocketState.connected):
             self.__sock_state = SocketState.deaf
+        elif self.sock_state is SocketState.mute:
+            self.__sock_state = SocketState.stopped
+
+            # Socket sending already closed (socket is mute).
+            # If socket receive is also closed (socket is deaf), then
+            # it is time for the socket to be closed.
+            # self.__terminate(ReactorState.stopped, None)
+        else:
+            raise NotImplementedError(self.sock_state)
 
         if self.state in (ReactorState.connack, ReactorState.connected):
             self.__log.warning('Remote closed stream unexpectedly.')
@@ -1612,6 +1629,7 @@ class Reactor(object):
 
     def __set_connack(self):
         assert self.sock_state in (SocketState.connecting, SocketState.handshake)
+        assert self.mqtt_state is MqttState.connack
         assert not self.__inflight_queue
         assert not self.__wbuf
 
@@ -1649,7 +1667,6 @@ class Reactor(object):
         """Called when a socket becomes connected; reactor must be in
         the `ReactorState.connecting` state."""
         assert self.sock_state is SocketState.connecting
-        assert self.state == ReactorState.connecting
 
         self.__log.info('Connected.')
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
@@ -1694,6 +1711,21 @@ class Reactor(object):
 
         return num_bytes_written
 
+    def __terminate_socket(self):
+        if self.socket is not None:
+            self.__selector.update(False, False, self.socket)
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except socket.error as e:
+                if e.errno == errno.ENOTCONN:
+                    pass
+                else:
+                    raise NotImplementedError(e)
+            self.socket.close()
+            self.socket = None
+            self.__sock_state = SocketState.stopped
+            self.__update_io_notification()
+
     def __terminate(self, state, error=None):
         """
 
@@ -1715,17 +1747,11 @@ class Reactor(object):
             else:
                 raise NotImplementedError(self.state)
 
-            if self.socket is not None:
-                try:
-                    self.socket.shutdown(socket.SHUT_RDWR)
-                except socket.error as e:
-                    if e.errno == errno.ENOTCONN:
-                        pass
-                    else:
-                        raise NotImplementedError(e)
-                self.socket.close()
+            self.__terminate_socket()
         else:
             on_disconnect_cb = None
+
+        self.__pingreq_active = False
 
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
@@ -1742,7 +1768,6 @@ class Reactor(object):
         self.__error = error
 
         # TODO: Select correct states.
-        self.__sock_state = SocketState.stopped
         self.__mqtt_state = MqttState.stopped
 
         if callable(on_disconnect_cb):
@@ -1782,10 +1807,8 @@ class Reactor(object):
         self.__assert_state_rules()
         assert self.__keepalive_due_deadline is not None
 
-        assert self.state in (
-            ReactorState.connack,
-            ReactorState.connected,
-        )
+        assert self.sock_state is SocketState.connected
+        assert self.mqtt_state is MqttState.connected
 
         if not self.__inflight_queue and not self.__preflight_queue:
             # Only launch ping request if there are no existing messages
@@ -1805,16 +1828,11 @@ class Reactor(object):
         assert self.__keepalive_due_deadline is None
         assert self.__keepalive_abort_deadline is not None
 
-        if self.state in (
-                ReactorState.handshake,
-                ReactorState.connack,
-                ReactorState.connected,
-                ReactorState.mute):
-
+        if self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute, SocketState.deaf):
             msg = "More than abort period (%.01fs) has passed since last bytes received.  Aborting."
             self.__log.warning(msg, self.keepalive_timeout_period)
         else:
-            raise NotImplementedError(self.state)
+            raise NotImplementedError(self.sock_state)
 
         self.__keepalive_abort_deadline = None
 

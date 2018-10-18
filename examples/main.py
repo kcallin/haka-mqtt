@@ -9,7 +9,7 @@ from time import time
 from haka_mqtt.dns_async import AsyncFutureDnsResolver
 from haka_mqtt.socket_factory import SslSocketFactory
 from mqtt_codec.packet import MqttTopic, MqttControlPacketType
-from haka_mqtt.reactor import ReactorProperties, Reactor, ReactorState, INACTIVE_STATES
+from haka_mqtt.reactor import ReactorProperties, Reactor
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.scheduler import Scheduler
 
@@ -17,7 +17,7 @@ TOPIC = 'bubbles'
 count = 0
 
 
-class MqttClient():
+class MqttClient(object):
     def __init__(self, properties):
         """
 

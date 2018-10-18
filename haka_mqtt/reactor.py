@@ -1730,7 +1730,6 @@ class Reactor(object):
         self.__state = state
         self.__error = error
 
-        # TODO: Select correct states.
         self.__mqtt_state = MqttState.stopped
 
         if callable(on_disconnect_cb):

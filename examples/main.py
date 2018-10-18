@@ -17,7 +17,7 @@ TOPIC = 'bubbles'
 count = 0
 
 
-class MqttClient():
+class MqttClient(object):
     def __init__(self, properties):
         """
 

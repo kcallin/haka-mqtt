@@ -1029,7 +1029,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.stopping, self.reactor.state)
         self.assertEqual(SocketState.mute, self.reactor.sock_state)
         self.assertEqual(0, len(self.reactor.preflight_packets()))
-        self.assertEqual(1, len(self.reactor.in_flight_packets()))  # disconnect packet in flight
+        self.assertEqual(0, len(self.reactor.in_flight_packets()))
         self.assertEqual(set(), self.reactor.send_packet_ids())
 
         self.reactor.terminate()

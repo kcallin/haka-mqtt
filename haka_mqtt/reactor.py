@@ -90,13 +90,13 @@ class MqttState(IntEnum):
 
     Active States:
 
-    * :py:const:`ReactorState.connack`
-    * :py:const:`ReactorState.connected`
-    * :py:const:`ReactorState.mute`
+    * :py:const:`MqttState.connack`
+    * :py:const:`MqttState.connected`
+    * :py:const:`MqttState.mute`
 
     Inactive States:
 
-    * :py:const:`ReactorState.stopped`
+    * :py:const:`MqttState.stopped`
 
     """
     connack = 0
@@ -174,15 +174,11 @@ class ReactorState(IntEnum):
 
     """
     init = 0
-    name_resolution = 1
-    connecting = 2
-    handshake = 3
-    connack = 4
-    connected = 5
-    mute = 6
-    stopped = 7
-    error = 8
-
+    starting = 1
+    started = 2
+    stopping = 3
+    stopped = 4
+    error = 5
 
 # States where there are no active deadlines, the socket is closed and there
 # is no active I/O.
@@ -192,12 +188,9 @@ INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
 # States with active deadlines, open sockets, or pending I/O.
 #
 ACTIVE_STATES = (
-    ReactorState.name_resolution,
-    ReactorState.connecting,
-    ReactorState.handshake,
-    ReactorState.connack,
-    ReactorState.connected,
-    ReactorState.mute,
+    ReactorState.starting,
+    ReactorState.started,
+    ReactorState.stopping,
 )
 
 
@@ -438,7 +431,6 @@ class Reactor(object):
         self.__socket_factory = properties.socket_factory
         self.socket = None
         self.__host, self.__port = properties.endpoint
-        self.__enable = False
         self.__recveived_connack = False
         self.__state = ReactorState.init
         self.__mqtt_state = MqttState.stopped
@@ -539,11 +531,6 @@ class Reactor(object):
         return self.__sock_state
 
     @property
-    def enable(self):
-        """bool: True when enabled; False disabled."""
-        return self.__enable
-
-    @property
     def will(self):
         """mqtt_codec.packet.MqttWill or None: Last will and testament."""
         return self.__will
@@ -584,15 +571,11 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.sock_state)
 
-        if self.sock_state is not SocketState.connected:
+        if self.sock_state not in (SocketState.connected, SocketState.deaf):
             assert self.__keepalive_due_deadline is None
 
         if self.sock_state in INACTIVE_SOCKET_STATES:
             self.__selector.assert_closed()
-
-        # Try this
-        if self.state is ReactorState.mute:
-            assert self.enable is False
 
         if self.state is ReactorState.error:
             assert self.error is not None
@@ -630,8 +613,6 @@ class Reactor(object):
         --------
         MqttSubscribeTicket
         """
-        assert self.state == ReactorState.connected
-
         self.__assert_state_rules()
 
         req = MqttSubscribeTicket(self.__send_path_packet_ids.acquire(), topics)
@@ -658,8 +639,6 @@ class Reactor(object):
         --------
         MqttUnsubscribeTicket
         """
-        assert self.state == ReactorState.connected
-
         self.__assert_state_rules()
 
         req = MqttUnsubscribeTicket(self.__send_path_packet_ids.acquire(), topics)
@@ -705,11 +684,9 @@ class Reactor(object):
         assert self.sock_state in INACTIVE_SOCKET_STATES
         assert self.mqtt_state in INACTIVE_MQTT_STATES
         assert self.state in INACTIVE_STATES
-        assert self.enable is False
 
         self.__log.info('Starting.')
 
-        self.__enable = True
         self.__error = None
 
         self.__ssl_want_write = False
@@ -750,7 +727,7 @@ class Reactor(object):
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
 
-        self.__state = ReactorState.name_resolution
+        self.__state = ReactorState.starting
         self.__sock_state = SocketState.name_resolution
         self.__mqtt_state = MqttState.connack
 
@@ -776,8 +753,6 @@ class Reactor(object):
         assert future.done()
 
         if not future.cancelled():
-            assert self.enable
-
             results = future.result()
             if results is None:
                 e = future.exception()
@@ -853,9 +828,10 @@ class Reactor(object):
             A 5-tuple of (family, socktype, proto, canonname, sockaddr)
             as returned by `socket.getaddrinfo`."""
         assert self.sock_state is SocketState.name_resolution
+        assert self.state is ReactorState.starting
+
         family, socktype, proto, canonname, sockaddr = resolution
         try:
-            self.__state = ReactorState.connecting
             self.__sock_state = SocketState.connecting
             self.socket = self.__socket_factory()
             self.socket.connect(sockaddr)
@@ -880,15 +856,12 @@ class Reactor(object):
 
         if self.state in INACTIVE_STATES:
             self.__start()
-        elif self.state in (ReactorState.name_resolution,
-                            ReactorState.connecting,
-                            ReactorState.handshake,
-                            ReactorState.connack):
-            self.__log.warning("Start while already connecting to server; taking no additional action.")
-        elif self.state is ReactorState.connected:
-            self.__log.warning("Start while already connected; taking no action.")
-        elif self.state in (ReactorState.mute,):
-            self.__log.warning("Start while already stopping; stop process cannot be aborted.")
+        elif self.state is ReactorState.starting:
+            self.__log.warning("Start while already starting; taking no additional action.")
+        elif self.state is ReactorState.started:
+            self.__log.warning("Start while already started; taking no action.")
+        elif self.state is ReactorState.stopping:
+            self.__log.warning("Start while already stopping; ignoring start and continuing to stop.")
         else:
             raise NotImplementedError(self.state)
 
@@ -901,30 +874,23 @@ class Reactor(object):
         if self.state is ReactorState.init:
             self.__log.info('Stopped.')
             self.__state = ReactorState.stopped
-        elif self.state is ReactorState.name_resolution:
+        elif self.state in (ReactorState.starting, ReactorState.started):
             self.__log.info('Stopping.')
-            self.__terminate(ReactorState.stopped, None)
-        elif self.state is ReactorState.connecting:
-            assert self.enable is True
-            self.__log.info('Stopping.')
-            self.__terminate(ReactorState.stopped, None)
-        elif self.state is ReactorState.handshake:
-            assert self.enable is True
-            self.__log.info('Stopping.')
-            self.__terminate(ReactorState.stopped, None)
-        elif self.state in (ReactorState.connack, ReactorState.connected):
-            if self.enable:
-                self.__log.info('Stopping.')
-                self.__enable = False
-                self.__preflight_queue.append(MqttDisconnect())
+            if self.sock_state is SocketState.name_resolution:
+                self.__terminate(ReactorState.stopped, None)
+            elif self.sock_state is SocketState.connecting:
+                self.__terminate(ReactorState.stopped, None)
+            elif self.sock_state is SocketState.handshake:
+                self.__terminate(ReactorState.stopped, None)
             else:
-                self.__log.info('Stop request while already stopping.')
-        elif self.state is ReactorState.mute:
-            self.__log.info('Stop request while already stopping.')
+                self.__state = ReactorState.stopping
+                self.__preflight_queue.append(MqttDisconnect())
+        elif self.state is ReactorState.stopping:
+            self.__log.warning('Stop while already stopping.')
         elif self.state is ReactorState.stopped:
             self.__log.warning('Stop while already stopped.')
         elif self.state is ReactorState.error:
-            self.__log.warning('Stop while already in error.')
+            self.__log.warning('Stop while reactor in error.')
         else:
             raise NotImplementedError(self.state)
 
@@ -962,11 +928,10 @@ class Reactor(object):
         -------
         bool
         """
-        if self.state in ACTIVE_STATES:
-            if self.state in (ReactorState.connecting, ReactorState.name_resolution):
-                rv = False
-            else:
-                rv = True
+        if self.sock_state is SocketState.handshake:
+            rv = self.__ssl_want_read
+        elif self.sock_state in (SocketState.connected, SocketState.mute):
+            rv = True
         else:
             rv = False
 
@@ -980,19 +945,16 @@ class Reactor(object):
         -------
         bool
         """
-        if self.state in ACTIVE_STATES:
-            if self.state is ReactorState.connecting:
-                rv = True
-            elif self.state is ReactorState.connack:
-                rv = bool(self.__wbuf) or self.__ssl_want_write
-            elif self.state is ReactorState.name_resolution:
-                rv = False
-            elif bool(self.__wbuf) or bool(self.__preflight_queue):
-                rv = True
-            else:
-                rv = False or self.__ssl_want_write
-        else:
+        if self.sock_state in (SocketState.stopped, SocketState.name_resolution, SocketState.mute):
             rv = False
+        elif self.sock_state is SocketState.connecting:
+            rv = True
+        elif self.sock_state is SocketState.handshake:
+            rv = self.__ssl_want_write
+        elif self.sock_state is SocketState.connected:
+            rv = bool(self.__wbuf) or bool(self.__preflight_queue)
+        else:
+            raise NotImplementedError(self.sock_state)
 
         return rv
 
@@ -1009,7 +971,7 @@ class Reactor(object):
         assert self.sock_state in (SocketState.connected, SocketState.mute)
         assert len(new_bytes) > 0
 
-        if self.state is not ReactorState.mute:
+        if self.sock_state is not SocketState.mute:
             if self.__keepalive_due_deadline is not None:
                 self.__keepalive_due_deadline.cancel()
                 self.__keepalive_due_deadline = None
@@ -1070,34 +1032,39 @@ class Reactor(object):
         self.__ssl_want_read = False
 
         num_bytes_read = 0
-        if self.state not in INACTIVE_STATES:
-            if self.state is ReactorState.handshake:
-                self.__set_handshake()
-            else:
-                try:
-                    new_bytes = self.socket.recv(4096)
-                    num_bytes_read = len(new_bytes)
-                    if new_bytes:
-                        self.__on_recv_bytes(new_bytes)
-                    else:
-                        self.__on_muted_remote()
+        if self.sock_state in INACTIVE_SOCKET_STATES:
+            pass
+        elif self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.deaf):
+            pass
+        elif self.sock_state is SocketState.handshake:
+            self.__set_handshake()
+        elif self.sock_state in (SocketState.connected, SocketState.mute):
+            try:
+                new_bytes = self.socket.recv(4096)
+                num_bytes_read = len(new_bytes)
+                if new_bytes:
+                    self.__on_recv_bytes(new_bytes)
+                else:
+                    self.__on_muted_remote()
 
-                except UnderflowDecodeError:
-                    # Not enough header bytes.
+            except UnderflowDecodeError:
+                # Not enough header bytes.
+                pass
+            except DecodeError as e:
+                self.__log.error('Error decoding message (%s)', str(e))
+                self.__abort(DecodeReactorError(str(e)))
+            except ssl.SSLWantWriteError:
+                self.__ssl_want_write = True
+            except ssl.SSLWantReadError:
+                self.__ssl_want_read = True
+            except socket.error as e:
+                if e.errno == errno.EWOULDBLOCK:
+                    # No write space ready.
                     pass
-                except DecodeError as e:
-                    self.__log.error('Error decoding message (%s)', str(e))
-                    self.__abort(DecodeReactorError(str(e)))
-                except ssl.SSLWantWriteError:
-                    self.__ssl_want_write = True
-                except ssl.SSLWantReadError:
-                    self.__ssl_want_read = True
-                except socket.error as e:
-                    if e.errno == errno.EWOULDBLOCK:
-                        # No write space ready.
-                        pass
-                    else:
-                        self.__abort_socket_error(SocketReactorError(e.errno))
+                else:
+                    self.__abort_socket_error(SocketReactorError(e.errno))
+        else:
+            raise NotImplementedError(self.sock_state)
 
         self.__update_io_notification()
         self.__assert_state_rules()
@@ -1109,13 +1076,13 @@ class Reactor(object):
         if connack.session_present and self.clean_session:
             self.__abort_protocol_violation('Server indicates a session is present when none was requested. [MQTT-3.2.2-1]')
         else:
-            self.__mqtt_state = MqttState.connected
-            if self.state is ReactorState.connack:
-                self.__state = ReactorState.connected
-            elif self.state is ReactorState.mute:
+            if self.state is ReactorState.starting:
+                self.__state = ReactorState.started
+            elif self.state is ReactorState.stopping:
                 pass
             else:
                 raise NotImplementedError(self.state)
+            self.__mqtt_state = MqttState.connected
 
             if self.on_connack is not None:
                 self.on_connack(self, connack)
@@ -1177,7 +1144,7 @@ class Reactor(object):
             if self.on_publish is not None:
                 self.on_publish(self, publish)
 
-            if self.state is ReactorState.connected:
+            if self.sock_state in (SocketState.connected, SocketState.deaf):
                 if publish.qos == 0:
                     pass
                 elif publish.qos == 1:
@@ -1186,7 +1153,7 @@ class Reactor(object):
                     self.__preflight_queue.append(MqttPubrec(publish.packet_id))
                 else:
                     raise NotImplementedError(publish.qos)
-            elif self.state is ReactorState.mute:
+            elif self.sock_state is SocketState.mute:
                 if publish.qos == 0:
                     pass
                 elif publish.qos == 1:
@@ -1196,7 +1163,7 @@ class Reactor(object):
                 else:
                     raise NotImplementedError(publish.qos)
             else:
-                raise NotImplementedError(self.state)
+                raise NotImplementedError(self.sock_state)
         else:
             raise NotImplementedError(self.mqtt_state)
 
@@ -1471,25 +1438,14 @@ class Reactor(object):
         assert self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute)
 
         if self.sock_state in (SocketState.handshake, SocketState.connected):
-            self.__sock_state = SocketState.deaf
+            self.__abort(MutePeerReactorError())
         elif self.sock_state is SocketState.mute:
-            self.__sock_state = SocketState.stopped
-
             # Socket sending already closed (socket is mute).
             # If socket receive is also closed (socket is deaf), then
             # it is time for the socket to be closed.
-            # self.__terminate(ReactorState.stopped, None)
-        else:
-            raise NotImplementedError(self.sock_state)
-
-        if self.state in (ReactorState.connack, ReactorState.connected):
-            self.__log.warning('Remote closed stream unexpectedly.')
-            self.__abort(MutePeerReactorError())
-        elif self.state is ReactorState.mute:
-            self.__log.info('Remote gracefully closed stream.')
             self.__terminate(ReactorState.stopped, None)
         else:
-            raise NotImplementedError(self.state)
+            raise NotImplementedError(self.sock_state)
 
     def __launch_preflight_packets(self):
         """Takes messages from the preflight_queue and places them in
@@ -1586,11 +1542,11 @@ class Reactor(object):
             # elif packet.packet_type is MqttControlPacketType.pingresp:
             #     pass
             elif packet.packet_type is MqttControlPacketType.disconnect:
-                assert self.enable is False
+                assert self.state is ReactorState.stopping
                 self.__log.info('Shutting down outgoing stream.')
                 self.__inflight_queue.append(packet_record)
                 self.socket.shutdown(socket.SHUT_WR)
-                self.__state = ReactorState.mute
+                self.__sock_state = SocketState.mute
 
                 if self.__keepalive_due_deadline is not None:
                     self.__keepalive_due_deadline.cancel()
@@ -1617,24 +1573,25 @@ class Reactor(object):
             Returns number of bytes flushed to output buffers.
         """
 
-        if self.state in (ReactorState.init, ReactorState.stopped, ReactorState.error):
-            num_bytes_flushed = 0
-        elif self.state in (ReactorState.connack, ReactorState.connected):
+        if self.sock_state in (SocketState.connected, SocketState.deaf):
             num_bytes_flushed = self.__launch_preflight_packets()
-        elif self.state is ReactorState.mute:
+        elif self.sock_state in (SocketState.stopped,
+                                 SocketState.mute,
+                                 SocketState.name_resolution,
+                                 SocketState.connecting):
             num_bytes_flushed = 0
         else:
-            raise NotImplementedError(self.state)
+            raise NotImplementedError(self.sock_state)
 
         return num_bytes_flushed
 
     def __set_connack(self):
         assert self.sock_state in (SocketState.connecting, SocketState.handshake)
         assert self.mqtt_state is MqttState.connack
+        assert self.state is ReactorState.starting
         assert not self.__inflight_queue
         assert not self.__wbuf
 
-        self.__state = ReactorState.connack
         self.__sock_state = SocketState.connected
 
         connect = MqttConnect(self.client_id,
@@ -1649,8 +1606,7 @@ class Reactor(object):
 
     def __set_handshake(self):
         assert self.sock_state in (SocketState.connecting, SocketState.handshake)
-        assert self.state in (ReactorState.connecting, ReactorState.handshake)
-        self.__state = ReactorState.handshake
+        assert self.state is ReactorState.starting
         self.__sock_state = SocketState.handshake
         self.__ssl_want_read = False
         self.__ssl_want_write = False
@@ -1672,6 +1628,7 @@ class Reactor(object):
         """Called when a socket becomes connected; reactor must be in
         the `ReactorState.connecting` state."""
         assert self.sock_state is SocketState.connecting
+        assert self.state is ReactorState.starting
 
         self.__log.info('Connected.')
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
@@ -1717,6 +1674,18 @@ class Reactor(object):
         return num_bytes_written
 
     def __terminate_socket(self):
+        """Cleans up all socket-related resources.
+        * Closes any name resolution future and sets to None.
+        * Removes any socket from the selector.
+        * Shuts down reading and writing on socket.
+        * Calls close on socket.
+        * Ensures want_read and want_write are False.
+        * Sets sock_state to SocketState.stopped.
+        """
+        if self.__name_resolution_future is not None:
+            self.__name_resolution_future.cancel()
+            self.__name_resolution_future = None
+
         if self.socket is not None:
             self.__selector.update(False, False, self.socket)
             try:
@@ -1728,8 +1697,9 @@ class Reactor(object):
                     raise NotImplementedError(e)
             self.socket.close()
             self.socket = None
-            self.__sock_state = SocketState.stopped
             self.__update_io_notification()
+
+        self.__sock_state = SocketState.stopped
 
     def __terminate(self, state, error=None):
         """
@@ -1739,22 +1709,19 @@ class Reactor(object):
         state: ReactorState
         error: ReactorError
         """
-        if self.__name_resolution_future is not None:
-            self.__name_resolution_future.cancel()
-            self.__name_resolution_future = None
 
-        self.__enable = False
-        if self.state in ACTIVE_STATES:
-            if self.state in (ReactorState.name_resolution, ReactorState.connecting, ReactorState.handshake, ReactorState.connack):
-                on_disconnect_cb = self.on_connect_fail
-            elif self.state in (ReactorState.connected, ReactorState.mute):
-                on_disconnect_cb = self.on_disconnect
-            else:
-                raise NotImplementedError(self.state)
+        # Clean up all socket-related resources.
+        self.__terminate_socket()
 
-            self.__terminate_socket()
+        # Clean up all MQTT protocol ralted items.
+        if self.mqtt_state is MqttState.connack:
+            on_disconnect_cb = self.on_connect_fail
+        elif self.mqtt_state in (MqttState.connected, MqttState.mute):
+            on_disconnect_cb = self.on_disconnect
+        elif self.mqtt_state in INACTIVE_MQTT_STATES:
+            pass
         else:
-            on_disconnect_cb = None
+            raise NotImplementedError(self.state)
 
         self.__pingreq_active = False
 
@@ -1854,25 +1821,22 @@ class Reactor(object):
         If self.state is an inactive state then no action is taken."""
         self.__assert_state_rules()
 
-        if self.state in ACTIVE_STATES:
-            if self.state == ReactorState.connecting:
-                e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-                if e == 0:
-                    self.__on_connect()
-                elif errno.EINPROGRESS:
-                    pass
-                else:
-                    self.__abort_socket_error(SocketReactorError(e.errno))
-            elif self.state is ReactorState.handshake:
-                self.__set_handshake()
-            elif self.state in (ReactorState.connack, ReactorState.connected):
-                self.__launch_next_queued_packet()
+        if self.sock_state is SocketState.connecting:
+            e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if e == 0:
+                self.__on_connect()
+            elif errno.EINPROGRESS:
+                pass
             else:
-                raise NotImplementedError(self.state)
-        elif self.state in INACTIVE_STATES:
+                self.__abort_socket_error(SocketReactorError(e.errno))
+        elif self.sock_state is SocketState.handshake:
+            self.__set_handshake()
+        elif self.sock_state in (SocketState.connected, SocketState.deaf):
+            self.__launch_next_queued_packet()
+        elif self.sock_state in (SocketState.name_resolution, SocketState.stopped, SocketState.mute):
             pass
         else:
-            raise NotImplementedError(self.state)
+            raise NotImplementedError(self.sock_state)
 
         self.__update_io_notification()
         self.__assert_state_rules()

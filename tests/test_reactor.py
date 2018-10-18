@@ -40,7 +40,7 @@ from haka_mqtt.reactor import (
     ReactorState,
     KeepaliveTimeoutReactorError,
     ConnectReactorError, INACTIVE_STATES, SocketReactorError, AddressReactorError, DecodeReactorError,
-    ProtocolReactorError, INACTIVE_SOCKET_STATES, SocketState, MqttState)
+    ProtocolReactorError, INACTIVE_SOCK_STATES, SocketState, MqttState)
 from haka_mqtt.scheduler import Scheduler
 
 
@@ -343,7 +343,7 @@ class TestReactor(unittest.TestCase):
 
     def start_to_name_resolution(self):
         self.assertIn(self.reactor.state, INACTIVE_STATES)
-        self.assertIn(self.reactor.sock_state, INACTIVE_SOCKET_STATES)
+        self.assertIn(self.reactor.sock_state, INACTIVE_SOCK_STATES)
 
         # Start called
         self.name_resolver_future.set_result(None)
@@ -353,7 +353,7 @@ class TestReactor(unittest.TestCase):
 
     def start_to_connecting(self):
         self.assertTrue(self.reactor.state in INACTIVE_STATES)
-        self.assertIn(self.reactor.sock_state, INACTIVE_SOCKET_STATES)
+        self.assertIn(self.reactor.sock_state, INACTIVE_SOCK_STATES)
 
         # Set up start call.
         self.socket.connect.side_effect = socket.error(errno.EINPROGRESS, '')
@@ -418,7 +418,7 @@ class TestReactor(unittest.TestCase):
 
     def start_to_immediate_connect(self):
         self.assertIn(self.reactor.state, INACTIVE_STATES)
-        self.assertIn(self.reactor.sock_state, INACTIVE_SOCKET_STATES)
+        self.assertIn(self.reactor.sock_state, INACTIVE_SOCK_STATES)
 
         self.socket.connect.return_value = None
         connect = MqttConnect(self.client_id, self.properties.clean_session, self.keepalive_period)

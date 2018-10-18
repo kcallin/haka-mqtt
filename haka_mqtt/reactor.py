@@ -148,8 +148,8 @@ ACTIVE_SOCKET_STATES = (
     SocketState.mute,
     SocketState.deaf,
 )
-INACTIVE_SOCKET_STATES = (SocketState.stopped,)
-assert set(ACTIVE_SOCKET_STATES).union(INACTIVE_SOCKET_STATES) == set(iter(SocketState))
+INACTIVE_SOCK_STATES = (SocketState.stopped,)
+assert set(ACTIVE_SOCKET_STATES).union(INACTIVE_SOCK_STATES) == set(iter(SocketState))
 
 
 @unique
@@ -555,10 +555,22 @@ class Reactor(object):
             self.__selector.update(self.want_read(), self.want_write(), self.socket)
 
     def __assert_state_rules(self):
+        if self.mqtt_state in INACTIVE_MQTT_STATES or self.sock_state in INACTIVE_SOCK_STATES or self.state in INACTIVE_STATES:
+            assert self.mqtt_state in INACTIVE_MQTT_STATES
+            assert self.sock_state in INACTIVE_SOCK_STATES
+            assert self.state in INACTIVE_STATES
+
+        if self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.handshake):
+            assert self.state is ReactorState.starting
+            assert self.mqtt_state is MqttState.connack
+
         if self.want_write() or self.want_read():
             assert self.socket is not None
 
-        if self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.handshake, SocketState.stopped):
+        if self.sock_state in (SocketState.name_resolution,
+                               SocketState.connecting,
+                               SocketState.handshake,
+                               SocketState.stopped):
             assert self.__pingreq_active is False
 
         if self.sock_state not in (SocketState.connected, SocketState.deaf, SocketState.mute):
@@ -574,7 +586,7 @@ class Reactor(object):
         if self.sock_state not in (SocketState.connected, SocketState.deaf):
             assert self.__keepalive_due_deadline is None
 
-        if self.sock_state in INACTIVE_SOCKET_STATES:
+        if self.sock_state in INACTIVE_SOCK_STATES:
             self.__selector.assert_closed()
 
         if self.state is ReactorState.error:
@@ -681,7 +693,7 @@ class Reactor(object):
         return req
 
     def __start(self):
-        assert self.sock_state in INACTIVE_SOCKET_STATES
+        assert self.sock_state in INACTIVE_SOCK_STATES
         assert self.mqtt_state in INACTIVE_MQTT_STATES
         assert self.state in INACTIVE_STATES
 
@@ -1032,7 +1044,7 @@ class Reactor(object):
         self.__ssl_want_read = False
 
         num_bytes_read = 0
-        if self.sock_state in INACTIVE_SOCKET_STATES:
+        if self.sock_state in INACTIVE_SOCK_STATES:
             pass
         elif self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.deaf):
             pass

@@ -1,3 +1,4 @@
+import atexit
 import fcntl
 import os
 import socket
@@ -7,14 +8,24 @@ from time import sleep
 
 
 class _Future(object):
-    def __init__(self):
+    def __init__(self, call, *args, **kwargs):
+        assert callable(call)
         self.__cancelled = False
         self.__done = False
         self.__result = None
         self.__exception = None
         self.__notified = False
         self.__callbacks = []
-        self._thread = None
+        self.__callable = call
+        self.__args = args
+        self.__kwargs = kwargs
+
+    def _work(self):
+        try:
+            self.__result = self.__callable(*self.__args, **self.__kwargs)
+        except Exception as e:
+            self.__exception = e
+        self.__done = True
 
     def _notify(self):
         if not self.__notified:
@@ -32,26 +43,6 @@ class _Future(object):
             rv = True
 
         return rv
-
-    def set_result(self, result):
-        """
-        Sets the result of the work associated with the Future to result.
-
-        This method should only be used by Executor implementations and unit tests.
-        """
-        assert not self.done()
-        self.__result = result
-        self.__done = True
-
-    def set_exception(self, exception):
-        """
-            Sets the result of the work associated with the Future to the Exception exception.
-
-            This method should only be used by Executor implementations and unit tests.
-        """
-        assert not self.done()
-        self.__exception = exception
-        self.__done = True
 
     def cancelled(self):
         return self.__cancelled
@@ -72,41 +63,44 @@ class _Future(object):
             self.__callbacks.append(fn)
 
 
-def call_task(queue, wd, future, callable, *args, **kwargs):
-    """
+_Poison = object()
 
+
+def _worker_task(work_queue, wd, done_queue):
+    """
     Parameters
     ----------
-    queue: Queue
+    work_queue: Queue
     wd: fileno
-    future: _Future
-    params: tuple
+    done_queue: Queue of _Future
     """
-    try:
-        rv = callable(*args, **kwargs)
-        future.set_result(rv)
-        queue.put(future)
-    except socket.gaierror as e:
-        future.set_exception(e)
-        queue.put(future)
 
     while True:
-        num_bytes_written = os.write(wd, 'x')
-        if num_bytes_written == 1:
+        future = work_queue.get()
+        if future is _Poison:
             break
-        elif num_bytes_written == 0:
-            sleep(0.01)
         else:
-            raise NotImplementedError(num_bytes_written)
+            future._work()
+            done_queue.put(future)
+
+            while True:
+                num_bytes_written = os.write(wd, 'x')
+                if num_bytes_written == 1:
+                    break
+                elif num_bytes_written == 0:
+                    sleep(0.01)
+                else:
+                    raise NotImplementedError(num_bytes_written)
 
 
 class AsyncFutureDnsResolver(object):
     """This class is not thread safe; it must be accessed from one
     thread only.
     """
-    def __init__(self):
-        self.__enable = True
-        self.__queue = Queue()
+    def __init__(self, thread_pool_size=1):
+        self.__closed = False
+        self.__work_queue = Queue()
+        self.__done_queue = Queue()
         self.__threads = []
         self.__rd, self.__wd = os.pipe()
 
@@ -116,6 +110,12 @@ class AsyncFutureDnsResolver(object):
         flags = fcntl.fcntl(self.__wd, fcntl.F_GETFL)
         fcntl.fcntl(self.__wd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
+        for i in range(0, thread_pool_size):
+            t = threading.Thread(target=_worker_task, args=(self.__work_queue, self.__wd, self.__done_queue))
+            t.daemon = True
+            self.__threads.append(t)
+            t.start()
+
     def __enter__(self):
         return self
 
@@ -123,14 +123,29 @@ class AsyncFutureDnsResolver(object):
         self.close()
         return False
 
+    def closed(self):
+        """bool: True if the object has been closed; False otherwise."""
+        return self.__closed
+
     def close(self):
-        self.__enable = False
-        self.join()
-        os.close(self.__wd)
-        os.close(self.__rd)
+        """Closes resolver by completing all tasks in queue and joining
+         with worker threads.  New dns resolutions cannot be scheduled
+         after this method begins executing (calling the resolver will
+         result in an assertion failure)."""
+        if not self.closed():
+            self.__closed = True
+            for i in xrange(0, len(self.__threads)):
+                self.__work_queue.put(_Poison)
+
+            for thread in self.__threads:
+                thread.join()
+                self.poll()
+
+            os.close(self.__wd)
+            os.close(self.__rd)
 
     def __call__(self, host, port, family=0, socktype=0, proto=0, flags=0):
-        """
+        """Queues an asynchronous DNS resolution task.
 
         Parameters
         ----------
@@ -165,15 +180,11 @@ class AsyncFutureDnsResolver(object):
             (address, port, flow info, scope id) 4-tuple for AF_INET6),
             and is meant to be passed to the socket.connect() method.
         """
-        assert self.__enable, 'Async dns lookup after resolver closed.'
+        assert not self.__closed, 'Async dns lookup after resolver closed.'
 
-        future = _Future()
-        getadrrinfo_params = (host, port, family, socktype, proto, flags)
-        thread_args = (self.__queue, self.__wd, future, socket.getaddrinfo) + getadrrinfo_params
-        t = threading.Thread(target=call_task, args=thread_args)
-        future._thread = t
-        self.__threads.append(t)
-        t.start()
+        getaddrinfo_params = (host, port, family, socktype, proto, flags)
+        future = _Future(socket.getaddrinfo, *getaddrinfo_params)
+        self.__work_queue.put(future)
 
         return future
 
@@ -184,13 +195,8 @@ class AsyncFutureDnsResolver(object):
     def poll(self):
         if os.read(self.__rd, 1):
             try:
-                future = self.__queue.get_nowait()
+                future = self.__done_queue.get_nowait()
             except Empty:
                 pass
             else:
-                self.__threads.remove(future._thread)
                 future._notify()
-
-    def join(self):
-        for thread in self.__threads:
-            thread.join()

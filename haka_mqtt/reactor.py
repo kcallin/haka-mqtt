@@ -1097,7 +1097,7 @@ class Reactor(object):
             if self.on_connack is not None:
                 self.on_connack(self, connack)
 
-            self.__launch_next_queued_packet()
+            self.__feed_wbuf()
 
     def __on_connack(self, connack):
         """Called once when a connack packet is received.
@@ -1432,12 +1432,9 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.sock_state)
 
-    def __launch_preflight_packets(self):
-        """Takes messages from the preflight_queue and places them in
-        the in_flight_queues.
-
-        Simple launch process, but very inefficient!  Recommend
-        improvements based on benchmarks.
+    def __launch_packets(self):
+        """Places packets from the preflight queue on the inflight
+        queue as required to provide bytes to the write buffer.
 
         Returns
         -------
@@ -1551,12 +1548,11 @@ class Reactor(object):
 
         return num_bytes_flushed
 
-    def __launch_next_queued_packet(self):
-        """Takes messages from the preflight_queue and places them in
-        the in_flight_queues.
-
-        Takes messages from the in_flight_queues in the order they
-        appear in the preflight_queues.
+    def __feed_wbuf(self):
+        """Feeds the socket write buffer if the socket is in a state
+        where they can be sent.  Packets from the preflight queue are
+        placed on the inflight queue as necessary to acquire the
+        necessary bytes.
 
         Returns
         -------
@@ -1565,7 +1561,7 @@ class Reactor(object):
         """
 
         if self.sock_state in (SocketState.connected, SocketState.deaf):
-            num_bytes_flushed = self.__launch_preflight_packets()
+            num_bytes_flushed = self.__launch_packets()
         elif self.sock_state in (SocketState.stopped,
                                  SocketState.mute,
                                  SocketState.name_resolution,
@@ -1592,7 +1588,7 @@ class Reactor(object):
                               username=self.__username,
                               password=self.__password)
         self.__preflight_queue.insert(0, connect)
-        self.__launch_next_queued_packet()
+        self.__feed_wbuf()
         self.__update_io_notification()
 
     def __set_handshake(self):
@@ -1823,7 +1819,7 @@ class Reactor(object):
         elif self.sock_state is SocketState.handshake:
             self.__set_handshake()
         elif self.sock_state in (SocketState.connected, SocketState.deaf):
-            self.__launch_next_queued_packet()
+            self.__feed_wbuf()
         elif self.sock_state in (SocketState.name_resolution, SocketState.stopped, SocketState.mute):
             pass
         else:

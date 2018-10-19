@@ -991,7 +991,7 @@ class Reactor(object):
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,
                                                                self.__keepalive_abort_timeout)
 
-        self.__log.debug('Received %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
+        self.__log.debug('recv %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
 
         while True:
@@ -1546,7 +1546,7 @@ class Reactor(object):
                 assert self.__keepalive_abort_deadline is not None
 
         if num_bytes_flushed:
-            self.__log.debug('Wrote %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))
+            self.__log.debug('send %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))
             self.__wbuf = self.__wbuf[num_bytes_flushed:]
 
         return num_bytes_flushed

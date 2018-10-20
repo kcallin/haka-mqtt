@@ -210,7 +210,6 @@ def main(args=sys.argv[1:]):
     p = ReactorProperties()
     p.socket_factory = SslSocketFactory(ssl_context, endpoint[0])
     p.endpoint = endpoint
-    p.clock = clock
     p.keepalive_period = 10
     p.client_id = 'bobby'
     p.scheduler = scheduler

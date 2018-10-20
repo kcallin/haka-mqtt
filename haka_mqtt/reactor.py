@@ -11,7 +11,6 @@ from enum import (
     unique,
 )
 
-from haka_mqtt.clock import SystemClock
 from haka_mqtt.packet_ids import PacketIdGenerator
 from haka_mqtt.selector import Selector
 from mqtt_codec.io import (
@@ -51,7 +50,6 @@ class ReactorProperties(object):
     ----------
     socket_factory: haka_mqtt.socket_factory.SocketFactory
     client_id: str
-    clock:
     endpoint: tuple
         2-tuple of (host: `str`, port: `int`).  The `port` value is
         constrainted such that 0 <= `port` <= 2**16-1.
@@ -72,7 +70,6 @@ class ReactorProperties(object):
         self.socket_factory = None
         self.endpoint = None
         self.client_id = None
-        self.clock = SystemClock()
         self.keepalive_period = 10*60
         self.scheduler = None
         self.clean_session = True
@@ -451,7 +448,6 @@ class Reactor(object):
         self.__username = properties.username
         self.__password = properties.password
 
-        self.__clock = properties.clock
         self.__keepalive_period = properties.keepalive_period
         self.__keepalive_due_deadline = None
         self.__keepalive_abort_deadline = None

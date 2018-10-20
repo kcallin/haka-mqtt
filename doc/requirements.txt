@@ -1,2 +1,3 @@
 sphinxcontrib.seqdiag
 enum34
+mqtt-codec

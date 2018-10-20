@@ -1805,13 +1805,10 @@ class Reactor(object):
 
         assert self.sock_state is SocketState.connected
         assert self.mqtt_state is MqttState.connected
+        assert self.__pingreq_active is False
 
-        # TODO: preflight queue must contain messages that require an ack
-        if not self.__inflight_queue and not self.__preflight_queue:
-            # Only launch ping request if there are no existing messages
-            # in queue that could serve the same function.
-            self.__pingreq_active = True
-            self.__preflight_queue.append(MqttPingreq())
+        self.__pingreq_active = True
+        self.__preflight_queue.append(MqttPingreq())
 
         self.__keepalive_due_deadline.cancel()
         self.__keepalive_due_deadline = None

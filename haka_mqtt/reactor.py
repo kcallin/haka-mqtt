@@ -222,18 +222,28 @@ def get_packet_type(d, packet_id, packet_type):
 
 
 class ReactorError(object):
-    pass
+    def __repr__(self):
+        return '{}()'.format(self.__class__.__name__)
 
 
 class MutePeerReactorError(ReactorError):
     """Error that occurs when the server closes its write stream
     unexpectedly."""
-    pass
+
+    def __repr__(self):
+        return '{}()'.format(self.__class__.__name__)
+
 
 
 class ConnectReactorError(ReactorError):
     """Error that occurs when the server sends a connack fail in
-    response to an initial connect packet."""
+    response to an initial connect packet.
+
+    Parameters
+    ----------
+    result: ConnackResult
+        Asserted not to be `ConnackResult.accepted`.
+    """
     def __init__(self, result):
         assert result != ConnackResult.accepted
         self.__result = result
@@ -246,6 +256,9 @@ class ConnectReactorError(ReactorError):
     def __eq__(self, other):
         return hasattr(other, 'result') and self.result == other.result
 
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.result)
+
 
 class KeepaliveTimeoutReactorError(ReactorError):
     """Server fails to respond in a timely fashion."""
@@ -257,11 +270,12 @@ class KeepaliveTimeoutReactorError(ReactorError):
 
 
 class SocketReactorError(ReactorError):
-    """A socket call failed.
+    """A socket error-code in `errno.errorcode`.
 
     Parameters
     ----------
     errno_val: int
+        Asserted to be in `errno.errorcode`.
     """
     def __init__(self, errno_val):
         assert errno_val in errno.errorcode, errno_val
@@ -315,6 +329,8 @@ class DecodeReactorError(ReactorError):
     def __init__(self, description):
         self.description = description
 
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.description)
 
 class ProtocolReactorError(ReactorError):
     """Server send an inappropriate MQTT packet to the client."""

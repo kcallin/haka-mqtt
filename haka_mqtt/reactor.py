@@ -234,7 +234,6 @@ class MutePeerReactorError(ReactorError):
         return '{}()'.format(self.__class__.__name__)
 
 
-
 class ConnectReactorError(ReactorError):
     """Error that occurs when the server sends a connack fail in
     response to an initial connect packet.
@@ -332,6 +331,7 @@ class DecodeReactorError(ReactorError):
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.description)
 
+
 class ProtocolReactorError(ReactorError):
     """Server send an inappropriate MQTT packet to the client."""
     def __init__(self, description):
@@ -388,18 +388,34 @@ class Reactor(object):
 
     Attributes
     -----------
-    on_connect_fail: callable
-    on_disconnect: callable
-    on_connack: callable
-        The `reactor.state` will be `ReactorState.connected` or
-        `ReactorState.mute` if the reactor is shutting down.
-    on_suback: callable
-    on_unsuback: callable
-    on_pubrec: callable
-    on_pubcomp: callable
-    on_publish: callable
-    on_puback: callable
-    on_pubrel: callable
+    on_connect_fail: callable(r: Reactor)
+    on_disconnect: callable(r: Reactor)
+    on_connack: callable(r: Reactor, p: MqttConnack)
+        Called immediately upon receiving a `MqttConnack` packet from
+        the remote.  The `reactor.state` will be `ReactorState.started`
+        or `ReactorState.stopping` if the reactor is shutting down.
+    on_suback: callable(r: Reactor, p: MqttSuback)
+        Called immediately upon receiving a `MqttSuback` packet from the
+        remote.
+    on_unsuback: callable(r: Reactor, p: MqttUnsuback)
+        Called immediately upon receiving a `MqttUnsuback` packet from
+        the remote.
+    on_pubrec: callable(r: Reactor, p: MqttPubrec)
+        Called immediately upon receiving a `MqttPubrec` packet from the
+        remote.  This is part of the QoS=2 message send path.
+    on_pubcomp: callable(r: Reactor, p: MqttPubcomp)
+        Called immediately upon receiving a `MqttPubcomp` packet from the
+        remote.  This is part of the QoS=2 message send path.
+    on_publish: callable(r: Reactor, p: MqttPublish)
+        Called immediately upon receiving a `MqttSuback` packet from the
+        remote.  This is part of the QoS=0, 1, and 2 message receive
+        paths.
+    on_puback: callable(r: Reactor, p: MqttPuback)
+        Called immediately upon receiving a `MqttPuback` packet from the
+        remote.  This method is part of the QoS=1 message send path.
+    on_pubrel: callable(r: Reactor, p: MqttPubrel)
+        Called immediately upon receiving a `MqttPubrel` packet from the
+        remote.  This is part of the QoS=2 message receive path.
     """
     def __init__(self, properties, log='haka'):
         assert properties.client_id is not None
@@ -1717,11 +1733,12 @@ class Reactor(object):
         state: ReactorState
         error: ReactorError
         """
+        assert state in INACTIVE_STATES
 
         # Clean up all socket-related resources.
         self.__terminate_socket()
 
-        # Clean up all MQTT protocol ralted items.
+        # Clean up all MQTT protocol related items.
         if self.mqtt_state is MqttState.connack:
             on_disconnect_cb = self.on_connect_fail
         elif self.mqtt_state in (MqttState.connected, MqttState.mute):

@@ -1476,9 +1476,9 @@ class Reactor(object):
             Returns number of bytes flushed to output buffers.
         """
 
-        # Prepare bytes for launch
-        # TODO: must be larger than largest MQTT packet size
-        max_buf_size = 2**16
+        # Try to have at least as many bytes to send as there are in the
+        # socket send buffer.
+        min_buf_size = 2**12  # == 4096
         wbuf_size = len(self.__wbuf)
 
         #**************************************
@@ -1490,20 +1490,15 @@ class Reactor(object):
         #
         packet_end_offsets = [wbuf_size]
         bio = BytesIO()
-        num_new_bytes = 0
         for packet_record in self.__preflight_queue:
-            num_bytes_encoded = packet_record.encode(bio)
-            if wbuf_size + num_bytes_encoded <= max_buf_size:
-                wbuf_size += num_bytes_encoded
-                num_new_bytes += num_bytes_encoded
-                packet_end_offsets.append(wbuf_size)
-                if packet_record.packet_type is MqttControlPacketType.disconnect:
-                    break
-            else:
+            wbuf_size += packet_record.encode(bio)
+            packet_end_offsets.append(wbuf_size)
+
+            if packet_record.packet_type is MqttControlPacketType.disconnect or wbuf_size >= min_buf_size:
                 break
 
         # Write as many bytes as possible.
-        self.__wbuf.extend(bio.getvalue()[0:num_new_bytes])
+        self.__wbuf.extend(bio.getvalue())
         num_bytes_flushed = self.__flush()
 
         # Mark launched messages as in-flight.

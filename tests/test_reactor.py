@@ -407,7 +407,8 @@ class TestReactor(unittest.TestCase):
         self.set_send_side_effect([len(buf)])
 
         self.reactor.write()
-        self.socket.send.assert_called_once_with(buf)
+        self.socket.send.assert_called_once_with(bytearray(buf))
+
         self.socket.send.reset_mock()
 
         self.assertEqual(self.reactor.state, ReactorState.starting)

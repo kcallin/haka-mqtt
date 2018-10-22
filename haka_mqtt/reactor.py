@@ -1059,6 +1059,10 @@ class Reactor(object):
         the underlying socket to flush any bytes queued as a result of
         servicing the read request.
 
+        This method may be called at any time in any state and if `self`
+        is not prepared for a read at that point then no action will be
+        taken.
+
         Returns
         -------
         int
@@ -1831,7 +1835,13 @@ class Reactor(object):
         socket then a single call to socket send will be made to try
         and flush it to the socket write buffer.
 
-        If self.state is an inactive state then no action is taken."""
+        This method may be called at any time in any state and if `self`
+        is not prepared for a write at that point then no action will be
+        taken.
+
+        The `socket.settimeout` to perform a blocking write to the
+        socket.
+        """
         self.__assert_state_rules()
 
         if self.sock_state is SocketState.connecting:

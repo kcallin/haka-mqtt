@@ -2,8 +2,8 @@
 User Guide
 ===========
 
-The `mqtt_codec` package is a stateless package for encoding and
-decoding MQTT 3.1.1 packets.
+The `haka_mqtt` package is reliable, documented "weapons grade" MQTT
+client library.
 
 
 .. toctree::
@@ -17,3 +17,4 @@ decoding MQTT 3.1.1 packets.
    stop
    terminate
    build_doc
+   weapons_grade

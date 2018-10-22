@@ -1,6 +1,6 @@
-===============
-Subscribe Path
-===============
+===========================
+Subscribe/Unsubscribe Path
+===========================
 
 
 Subscribe
@@ -31,3 +31,10 @@ for the newly subscribed topic before the suback packet arrives.
       Q [description="Output Queue"];
       S [description="MQTT Server"];
    }
+
+
+Unsubscribe Path
+=================
+
+The unsubscribe/suback sequence shows the potential for a publish publish
+for the newly subscribed topic before the suback packet arrives.

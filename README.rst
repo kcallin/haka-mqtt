@@ -14,12 +14,20 @@ public consumption (2018-09-01).
 Installation
 -------------
 
-The haka-mqtt package can be installed from source in a standard fashion
-with the command:
+The haka-mqtt package can be from `<pypi.org>`_ with
+`pip <https://pypi.org/project/pip/>`_:
+
+.. code-block:: bash
+
+   pip install haka-mqtt
+
+Installations can also be performed from source in the traditional
+manner:
 
 .. code-block:: bash
 
    python setup.py install
+
 
 
 Project Infrastructure

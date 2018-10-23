@@ -1055,13 +1055,14 @@ class Reactor(object):
         """Calls recv on underlying socket exactly once and returns the
         number of bytes read.  If the underlying socket does not return
         any bytes due to an error or exception then zero is returned and
-        the reactor state is set to error.  A write call may be made to
-        the underlying socket to flush any bytes queued as a result of
-        servicing the read request.
+        the reactor state is set to error.
 
         This method may be called at any time in any state and if `self`
         is not prepared for a read at that point then no action will be
         taken.
+
+        The `socket.settimeout` can be used to perform a blocking read
+        with a timeout on the underlying socket.
 
         Returns
         -------
@@ -1129,7 +1130,7 @@ class Reactor(object):
             if self.on_connack is not None:
                 self.on_connack(self, connack)
 
-            self.__feed_wbuf()
+            self.__update_io_notification()
 
     def __on_connack(self, connack):
         """Called once when a connack packet is received.
@@ -1594,6 +1595,8 @@ class Reactor(object):
 
         if self.sock_state in (SocketState.connected, SocketState.deaf):
             num_bytes_flushed = self.__launch_packets()
+        elif self.sock_state is SocketState.handshake:
+            num_bytes_flushed = 0
         elif self.sock_state in (SocketState.stopped,
                                  SocketState.mute,
                                  SocketState.name_resolution,
@@ -1620,7 +1623,6 @@ class Reactor(object):
                               username=self.__username,
                               password=self.__password)
         self.__preflight_queue.insert(0, connect)
-        self.__feed_wbuf()
         self.__update_io_notification()
 
     def __set_handshake(self):
@@ -1839,8 +1841,8 @@ class Reactor(object):
         is not prepared for a write at that point then no action will be
         taken.
 
-        The `socket.settimeout` to perform a blocking write to the
-        socket.
+        The `socket.settimeout` can be used to perform a blocking write
+        with a timeout on the underlying socket.
         """
         self.__assert_state_rules()
 
@@ -1848,12 +1850,14 @@ class Reactor(object):
             e = self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
             if e == 0:
                 self.__on_connect()
+                self.__feed_wbuf()
             elif errno.EINPROGRESS:
                 pass
             else:
                 self.__abort_socket_error(SocketReactorError(e.errno))
         elif self.sock_state is SocketState.handshake:
             self.__set_handshake()
+            self.__feed_wbuf()
         elif self.sock_state in (SocketState.connected, SocketState.deaf):
             self.__feed_wbuf()
         elif self.sock_state in (SocketState.name_resolution, SocketState.stopped, SocketState.mute):

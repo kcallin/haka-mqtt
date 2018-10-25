@@ -5,12 +5,11 @@ Stopping
 A `stop` call puts the haka-mqtt reactor into a stop procedure:
 
 1. Reactor enters ``stopping`` state.
-2. ``MqttDisconnect`` is inserted into the output queue.
-3. Wait until all messages preceding and the ``MqttDisconnect`` message
-   itself have been written to the output buffer.
+2. ``MqttDisconnect`` is inserted into the preflight queue.
+3. Place messages from the preflight queue in-flight until the
+   ``MqttDisconnect`` is placed in the air.
 4. Close socket writes.
-5. Reactor enters ``mute`` state.
-6. Process messages on input until the remote closes its write stream
+5. Process messages on input until the remote closes its write stream
    and there is no more data left to read.
 7. Enter ``stopped`` state.
 
@@ -18,15 +17,21 @@ A `stop` call puts the haka-mqtt reactor into a stop procedure:
 Start
 ======
 
-While in the ``stopping`` or ``mute`` states calls to start have no
-effect.
+While in the ``stopping`` state calls to start have no effect.
 
 
 Stop
 =====
 
-While in the ``stopping`` or ``mute`` states calls to stop have no
-further effect.
+While in the ``stopping`` state calls to stop have no further effect.
+
+
+Terminate
+==========
+
+While in the ``stopping`` calls to terminate function normally;
+resources will be promptly cleaned up and the reactor will enter the
+``stopped`` state before `terminate` returns.
 
 
 Subscribe/Unsubscribe

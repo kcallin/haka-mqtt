@@ -33,5 +33,5 @@ implementations and the verb "pāho"  means to broadcast or announce
 What then is a "weapon's grade announcement"?  The culturally ignorant
 authors contend that the `haka
 <https://www.youtube.com/watch?v=BI851yJUQQw>`_ dance performed by the
-Maori is truly a weapons grade and announcement.  The authors are also
+Maori is truly a weapons grade announcement.  The authors are also
 jealous and wish that they could participate.

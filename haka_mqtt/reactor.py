@@ -1650,6 +1650,7 @@ class Reactor(object):
         the `ReactorState.connecting` state."""
         assert self.sock_state is SocketState.connecting
         assert self.state is ReactorState.starting
+        assert self.__keepalive_abort_deadline is None
 
         self.__log.info('Connected.')
         self.__keepalive_abort_deadline = self.__scheduler.add(1.5*self.keepalive_period,

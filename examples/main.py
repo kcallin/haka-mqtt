@@ -6,7 +6,6 @@ import sys
 
 from haka_mqtt.poll import MqttPollClientProperties, MqttPollClient
 from mqtt_codec.packet import MqttTopic
-from haka_mqtt.reactor import Reactor, INACTIVE_STATES
 
 TOPIC = 'bubbles'
 

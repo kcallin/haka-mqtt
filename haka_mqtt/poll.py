@@ -99,9 +99,9 @@ class MqttPollClient(Reactor):
         p = ReactorProperties()
         if properties.ssl:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            p.socket_factory = SslSocketFactory(ssl_context, properties.host)
+            p.socket_factory = SslSocketFactory(ssl_context)
         else:
-            p.socket_factory = socket_factory
+            p.socket_factory = SocketFactory()
 
         p.endpoint = endpoint
         p.keepalive_period = properties.keepalive_period

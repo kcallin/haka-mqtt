@@ -6,7 +6,9 @@ class SocketFactory(object):
     def __init__(self):
         pass
 
-    def __call__(self, addr):
+    def __call__(self, getaddrinfo_params, addr):
+        host, port, address_family, socktype, proto, flags = getaddrinfo_params
+
         if len(addr) == 2:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         elif len(addr) == 4:
@@ -19,23 +21,23 @@ class SocketFactory(object):
 
 
 class SslSocketFactory(object):
-    def __init__(self, context, hostname):
+    def __init__(self, context):
         """
 
         Parameters
         ----------
         context: ssl.SSLContext
-        hostname: str
         """
         self.__context = context
-        self.__hostname = hostname
 
-    def __call__(self, addr):
+    def __call__(self, getaddrinfo_params, addr):
         """
         Returns
         -------
         ssl.SSLSocket
         """
+
+        host, port, address_family, socktype, proto, flags = getaddrinfo_params
 
         if len(addr) == 2:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -48,6 +50,6 @@ class SslSocketFactory(object):
                                           server_side=False,
                                           do_handshake_on_connect=False,
                                           suppress_ragged_eofs=True,
-                                          server_hostname=self.__hostname)
+                                          server_hostname=host)
         sock.setblocking(False)
         return sock

@@ -473,6 +473,15 @@ class Reactor(object):
         self.__socket_factory = properties.socket_factory
         self.socket = None
         self.__host, self.__port = properties.endpoint
+        self.__getaddrinfo_params = (
+            self.__host,
+            self.__port,
+            self.__address_family,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            0
+        )
+
         self.__recveived_connack = False
         self.__state = ReactorState.init
         self.__mqtt_state = MqttState.stopped
@@ -825,11 +834,7 @@ class Reactor(object):
         self.__mqtt_state = MqttState.connack
 
         self.__log.info('Looking up host %s:%d.', self.__host, self.__port)
-        self.__name_resolution_future = self.__name_resolver(self.__host,
-                                                             self.__port,
-                                                             family=self.__address_family,
-                                                             socktype=socket.SOCK_STREAM,
-                                                             proto=socket.IPPROTO_TCP)
+        self.__name_resolution_future = self.__name_resolver(*self.__getaddrinfo_params)
         self.__name_resolution_future.add_done_callback(self.__on_name_resolution)
 
     def __on_name_resolution(self, future):
@@ -927,7 +932,7 @@ class Reactor(object):
         family, socktype, proto, canonname, sockaddr = resolution
         try:
             self.__sock_state = SocketState.connecting
-            self.socket = self.__socket_factory(sockaddr)
+            self.socket = self.__socket_factory(self.__getaddrinfo_params, sockaddr)
             self.socket.connect(sockaddr)
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:

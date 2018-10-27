@@ -1,65 +1,53 @@
 from __future__ import print_function
 import argparse
 import logging
-import ssl
+import socket
 import sys
-from select import select
-from time import time
 
-from haka_mqtt.dns_async import AsyncFutureDnsResolver
-from haka_mqtt.socket_factory import SslSocketFactory
-from mqtt_codec.packet import MqttTopic, MqttControlPacketType
-from haka_mqtt.reactor import ReactorProperties, Reactor
-from haka_mqtt.clock import SystemClock
-from haka_mqtt.scheduler import Scheduler
+from haka_mqtt.poll import MqttPollClientProperties, MqttPollClient
+from mqtt_codec.packet import MqttTopic
+from haka_mqtt.reactor import Reactor, INACTIVE_STATES
 
 TOPIC = 'bubbles'
-count = 0
 
 
-class MqttClient(object):
-    def __init__(self, properties):
-        """
+class ExampleMqttClient(MqttPollClient):
+    def __init__(self, endpoint):
+        properties = MqttPollClientProperties()
+        properties.client_id = 'bobby'
+        properties.keepalive_period = 10
+        properties.ssl = True
+        properties.host, properties.port = endpoint
+        properties.address_family = socket.AF_INET
 
-        Parameters
-        ----------
-        properties: ReactorProperties
-        """
-        self.__scheduler = properties.scheduler
-        reactor = Reactor(properties)
-        reactor.on_suback = self.__on_suback
-        reactor.on_puback = self.__on_puback
-        reactor.on_connack = self.__on_connack
-        reactor.on_publish = self.__on_publish
-        reactor.on_disconnect = self.__on_disconnect
-        reactor.on_connect_fail = self.__on_connect_fail
-        self.__reactor = reactor
-        self.__publish_queue = []
-        self.__puback_queue = []
-        self.__running = False
+        MqttPollClient.__init__(self, properties)
 
+        self.__req_queue = set()
+        self.__ack_queue = set()
+
+        self.__pub_period = 5.
         self.__pub_deadline = None
         self.__reconnect_deadline = None
 
-    def is_running(self):
-        return self.__running
-
-    def __on_disconnect(self, reactor):
-        print('disconnect', repr(reactor.error))
-        self.__reconnect_deadline = self.__scheduler.add(30., self.__reconnect_timeout)
-
-    def __on_connect_fail(self, reactor):
+    def on_disconnect(self, reactor):
         assert self.__reconnect_deadline is None
-        print('connect_fail', reactor.error)
-        self.__reconnect_deadline = self.__scheduler.add(30., self.__reconnect_timeout)
+        self.__reconnect_deadline = self._scheduler.add(30., self.on_reconnect_timeout)
+        self.__pub_deadline.cancel()
+        self.__pub_deadline = None
 
-    def __reconnect_timeout(self):
+    def on_connect_fail(self, reactor):
+        assert self.__reconnect_deadline is None
+        self.__reconnect_deadline = self._scheduler.add(30., self.on_reconnect_timeout)
+        self.__pub_deadline.cancel()
+        self.__pub_deadline = None
+
+    def on_reconnect_timeout(self):
         self.__reconnect_deadline.cancel()
         self.__reconnect_deadline = None
 
-        self.__reactor.start()
+        self.start()
 
-    def __on_suback(self, reactor, p):
+    def on_suback(self, reactor, p):
         """
 
         Parameters
@@ -67,12 +55,9 @@ class MqttClient(object):
         reactor: Reactor
         p: MqttSuback
         """
+        self.__ack_queue.add(p.packet_id)
 
-        if len(self.__publish_queue) == len(self.__puback_queue):
-            publish = self.__reactor.publish(TOPIC, str(count), 1)
-            self.__publish_queue.append(publish)
-
-    def __on_puback(self, reactor, p):
+    def on_puback(self, reactor, p):
         """
 
         Parameters
@@ -80,28 +65,16 @@ class MqttClient(object):
         reactor: Reactor
         p: mqtt_codec.packet.MqttPuback
         """
+        self.__ack_queue.add(p.packet_id)
 
-        assert p.packet_type is MqttControlPacketType.puback
-        assert p.packet_id == self.__publish_queue[-1].packet_id, (p.packet_id, self.__publish_queue[-1].packet_id)
+    def on_pub_timeout(self):
+        if len(self.__req_queue) == len(self.__ack_queue):
+            publish = self.publish(TOPIC, str(len(self.__req_queue)), 1)
+            self.__req_queue.add(publish.packet_id)
 
-        self.__puback_queue.append(p)
+        self.__pub_deadline = self._scheduler.add(self.__pub_period, self.on_pub_timeout)
 
-        if len(self.__publish_queue) % 2 == 0:
-            if len(self.__publish_queue) == len(self.__puback_queue):
-                publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
-                self.__publish_queue.append(publish)
-        else:
-            self.__pub_deadline = self.__scheduler.add(30., self.__on_pub_timeout)
-
-    def __on_pub_timeout(self):
-        if len(self.__publish_queue) == len(self.__puback_queue):
-            publish = self.__reactor.publish(TOPIC, str(len(self.__publish_queue)), 1)
-            self.__publish_queue.append(publish)
-
-        self.__pub_deadline.cancel()
-        self.__pub_deadline = None
-
-    def __on_connack(self, reactor, p):
+    def on_connack(self, reactor, p):
         """
 
         Parameters
@@ -109,11 +82,12 @@ class MqttClient(object):
         reactor: Reactor
         p: MqttConnack
         """
-        self.__reactor.subscribe([
+        sub_ticket = self.subscribe([
             MqttTopic(TOPIC, 1),
         ])
+        self.__req_queue.add(sub_ticket.packet_id)
 
-    def __on_publish(self, reactor, p):
+    def on_publish(self, reactor, p):
         """
 
         Parameters
@@ -123,25 +97,9 @@ class MqttClient(object):
         """
         pass
 
-    @property
-    def socket(self):
-        return self.__reactor.socket
-
-    def want_read(self):
-        return self.__reactor.want_read()
-
-    def read(self):
-        return self.__reactor.read()
-
-    def want_write(self):
-        return self.__reactor.want_write()
-
-    def write(self):
-        return self.__reactor.write()
-
     def start(self):
-        self.__reactor.start()
-        self.__running = True
+        self.__pub_deadline = self._scheduler.add(self.__pub_period, self.on_pub_timeout)
+        super(type(self), self).start()
 
 
 def argparse_endpoint(s):
@@ -200,88 +158,13 @@ def main(args=sys.argv[1:]):
     parser = create_parser()
     ns = parser.parse_args(args)
 
-    endpoint = ns.endpoint
-    clock = SystemClock()
-
-    scheduler = Scheduler()
-    async_name_resolver = AsyncFutureDnsResolver()
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-
-    p = ReactorProperties()
-    p.socket_factory = SslSocketFactory(ssl_context, endpoint[0])
-    p.endpoint = endpoint
-    p.keepalive_period = 10
-    p.client_id = 'bobby'
-    p.scheduler = scheduler
-    p.name_resolver = async_name_resolver
-
-    client = MqttClient(p)
+    client = ExampleMqttClient(ns.endpoint)
     client.start()
 
-    log = logging.getLogger()
-
-    last_poll_time = time()
-    select_timeout = scheduler.remaining()
-    while client.is_running():
-        #
-        #                                 |---------poll_period-------------|------|
-        #                                 |--poll--|-----select_period------|
-        #                                 |  dur   |
-        #  ... ----|--------|-------------|--------|---------|--------------|------|---- ...
-        #            select   handle i/o     poll     select    handle i/o    poll
-        #
-        rlist = [async_name_resolver.read_fd()]
-        if client.want_read():
-            rlist.append(client.socket)
-
-        if client.want_write():
-            wlist = [client.socket]
-        else:
-            wlist = []
-
-        if select_timeout is None:
-            pass
-            #log.debug('Enter select None')
-        else:
-            pass
-            #log.debug('Enter select %f', select_timeout)
-        rlist, wlist, xlist = select(rlist, wlist, [], select_timeout)
-        #log.debug('Exit select')
-
-        for r in rlist:
-            if r == client.socket:
-                client.read()
-            elif r == async_name_resolver.read_fd():
-                async_name_resolver.poll()
-            else:
-                raise NotImplementedError()
-
-        for w in wlist:
-            assert w == client.socket
-            #log.debug('Calling write')
-            client.write()
-
-        poll_time = time()
-        time_since_last_poll = poll_time - last_poll_time
-        if scheduler.remaining() is not None:
-            deadline_miss_duration = time_since_last_poll - scheduler.remaining()
-            if deadline_miss_duration > 0:
-                log.debug("Missed poll deadline by %fs.", deadline_miss_duration)
-
-        scheduler.poll(time_since_last_poll)
-        last_poll_time = poll_time
-
-        select_timeout = scheduler.remaining()
-        if select_timeout is not None:
-            last_poll_duration = time() - last_poll_time
-            select_timeout -= last_poll_duration
-
-        assert None < 0
-
-        if select_timeout is not None and select_timeout < 0:
-            select_timeout = 0
-
-    #print(repr(reactor.error))
+    while True:
+        client.poll(5.)
+        if client.state in INACTIVE_STATES:
+            client.start()
 
 
 if __name__ == '__main__':

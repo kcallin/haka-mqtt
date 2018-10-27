@@ -68,7 +68,9 @@ class ReactorProperties(object):
     name_resolver: callable
         DNS resolver.
     address_family: int
-        Address family; socket.AF_UNSPEC by default.
+        Address family; one of the socket.AF_* constants (eg.
+        socket.AF_UNSPEC for any family, socket.AF_INET for IP4
+        socket.AF_INET6 for IP6).
     username: str optional
     password: str optional
     selector: Selector
@@ -504,23 +506,50 @@ class Reactor(object):
         # Want read
         self.__selector = _AssertSelectAdapter(self, properties.selector)
 
-        # Connection Callbacks
-        self.on_connect_fail = None
-        self.on_disconnect = None
-        self.on_connack = None
+    # # Connection Callbacks
+    # self.on_connect_fail = None
+    # self.on_disconnect = None
+    # self.on_connack = None
+    def on_connect_fail(self, reactor):
+        pass
 
-        # Send path
-        self.on_pubrec = None
-        self.on_pubcomp = None
+    def on_disconnect(self, reactor):
+        pass
 
-        # Subscribe path
-        self.on_suback = None
-        self.on_unsuback = None
+    def on_connack(self, reactor, connack):
+        pass
 
-        # Receive path
-        self.on_publish = None
-        self.on_puback = None
-        self.on_pubrel = None
+    # # Send path
+    # self.on_pubrec = None
+    # self.on_pubcomp = None
+    def on_pubrec(self, reactor, pubrec):
+        pass
+
+    def on_pubcomp(self, reactor, pubcomp):
+        pass
+
+    # # Subscribe path
+    # self.on_suback = None
+    # self.on_unsuback = None
+    #
+    def on_suback(self, reactor, suback):
+        pass
+
+    def on_unsuback(self, reactor, unsuback):
+        pass
+
+    # # Receive path
+    # self.on_publish = None
+    # self.on_puback = None
+    # self.on_pubrel = None
+    def on_publish(self, reactor, publish):
+        pass
+
+    def on_puback(self, reactor, puback):
+        pass
+
+    def on_pubrel(self, reactor, pubrel):
+        pass
 
     @property
     def clean_session(self):

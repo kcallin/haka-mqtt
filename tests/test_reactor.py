@@ -14,6 +14,7 @@ import sys
 import unittest
 import socket
 from io import BytesIO
+from unittest import skip
 
 from mock import Mock
 
@@ -1819,7 +1820,7 @@ class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
         # Start with async connect
         self.start_to_handshake()
 
-        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.scheduler.poll(self.reactor.abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
 
@@ -1827,14 +1828,14 @@ class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
         # Start with async connect
         self.start_to_connack()
 
-        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.scheduler.poll(self.reactor.abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
 
     def test_connected(self):
         self.start_to_connected()
 
-        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.scheduler.poll(self.reactor.abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
 
@@ -1848,7 +1849,7 @@ class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
         self.assertEqual(SocketState.mute, self.reactor.sock_state)
         self.assertEqual(ReactorState.stopping, self.reactor.state)
 
-        self.scheduler.poll(self.reactor.keepalive_timeout_period)
+        self.scheduler.poll(self.reactor.abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
 
@@ -1934,3 +1935,32 @@ class TestPingreqPingresp(TestReactor, unittest.TestCase):
 
         self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state, self.reactor.error)
+
+
+class TestDisabledKeepalive(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        self.keepalive_period = 0
+        return TestReactor.reactor_properties(self)
+
+    def test_connack(self):
+        # Start with async connect
+        self.assertEqual(0, self.reactor.keepalive_period)
+        self.start_to_connack()
+
+        self.assertEqual(1, len(self.scheduler))
+        self.assertEqual(ReactorState.starting, self.reactor.state)
+        self.assertEqual(MqttState.connack, self.reactor.mqtt_state)
+        self.assertFalse(self.reactor.want_write())
+
+        # Before a connack is received no pingreq should be sent.
+        self.scheduler.poll(self.reactor.abort_period)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError), self.reactor.error)
+        self.socket.send.assert_not_called()
+
+    def test_connected(self):
+        self.start_to_connected()
+
+        self.assertEqual(1, len(self.scheduler))
+        self.scheduler.poll(self.reactor.abort_period)
+        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError), self.reactor.error)
+        self.socket.send.assert_not_called()

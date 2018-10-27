@@ -156,10 +156,13 @@ class AsyncFutureDnsResolver(object):
             A string service name such as 'http', a numeric port number,
             or None.
         family: int
+            One of the socket.AF_* constants.
         socktype: int
+            One of the socket.SOCK_* constants.
         proto: int
+            socket.IPPROTO_TCP
         flags: int
-            One or several of the AI_* constants; default is zero.
+            One of several of the AI_* constants; default is zero.
 
         Returns
         -------

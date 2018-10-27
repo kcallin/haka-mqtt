@@ -4,9 +4,9 @@ from select import select
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.dns_async import AsyncFutureDnsResolver
-from haka_mqtt.reactor import ReactorProperties, Reactor, INACTIVE_STATES
+from haka_mqtt.reactor import ReactorProperties, Reactor
 from haka_mqtt.scheduler import Scheduler
-from haka_mqtt.socket_factory import Ip4SslSocketFactory, ip4_socket_factory, ip6_socket_factory, Ip6SslSocketFactory
+from haka_mqtt.socket_factory import SslSocketFactory, SocketFactory
 
 
 class _PollClientSelector(object):
@@ -99,19 +99,9 @@ class MqttPollClient(Reactor):
         p = ReactorProperties()
         if properties.ssl:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            if properties.address_family is socket.AF_INET:
-                p.socket_factory = Ip4SslSocketFactory(ssl_context, properties.host)
-            elif properties.address_family is socket.AF_INET6:
-                p.socket_factory = Ip6SslSocketFactory(ssl_context, properties.host)
-            else:
-                raise NotImplementedError(p.socket_factory)
+            p.socket_factory = SslSocketFactory(ssl_context, properties.host)
         else:
-            if properties.address_family is socket.AF_INET:
-                p.socket_factory = ip4_socket_factory
-            elif properties.address_family is socket.AF_INET6:
-                p.socket_factory = ip6_socket_factory
-            else:
-                raise NotImplementedError(p.socket_factory)
+            p.socket_factory = socket_factory
 
         p.endpoint = endpoint
         p.keepalive_period = properties.keepalive_period
@@ -139,7 +129,7 @@ class MqttPollClient(Reactor):
             self._last_poll_time = self._clock.time()
 
         select_timeout = self._scheduler.remaining()
-        while (poll_end_time is None or self._clock.time() < poll_end_time) and self.state not in INACTIVE_STATES:
+        while poll_end_time is None or self._clock.time() < poll_end_time:
             #
             #                                 |---------poll_period-------------|------|
             #                                 |--poll--|-----select_period------|

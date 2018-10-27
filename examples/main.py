@@ -18,7 +18,7 @@ class ExampleMqttClient(MqttPollClient):
         properties.keepalive_period = 10
         properties.ssl = True
         properties.host, properties.port = endpoint
-        properties.address_family = socket.AF_INET
+        properties.address_family = socket.AF_UNSPEC
 
         MqttPollClient.__init__(self, properties)
 
@@ -27,17 +27,18 @@ class ExampleMqttClient(MqttPollClient):
 
         self.__pub_period = 5.
         self.__pub_deadline = None
+        self.__reconnect_period = 10.
         self.__reconnect_deadline = None
 
     def on_disconnect(self, reactor):
         assert self.__reconnect_deadline is None
-        self.__reconnect_deadline = self._scheduler.add(30., self.on_reconnect_timeout)
+        self.__reconnect_deadline = self._scheduler.add(self.__reconnect_period, self.on_reconnect_timeout)
         self.__pub_deadline.cancel()
         self.__pub_deadline = None
 
     def on_connect_fail(self, reactor):
         assert self.__reconnect_deadline is None
-        self.__reconnect_deadline = self._scheduler.add(30., self.on_reconnect_timeout)
+        self.__reconnect_deadline = self._scheduler.add(self.__reconnect_period, self.on_reconnect_timeout)
         self.__pub_deadline.cancel()
         self.__pub_deadline = None
 
@@ -155,6 +156,10 @@ def main(args=sys.argv[1:]):
     # from https://test.mosquitto.org/ (2018-09-19)
     #
 
+    # addr = ('2001:41d0:a:3a10::1', 8883, 0, 0)
+    # sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    # sock.connect(addr)
+
     parser = create_parser()
     ns = parser.parse_args(args)
 
@@ -163,8 +168,6 @@ def main(args=sys.argv[1:]):
 
     while True:
         client.poll(5.)
-        if client.state in INACTIVE_STATES:
-            client.start()
 
 
 if __name__ == '__main__':

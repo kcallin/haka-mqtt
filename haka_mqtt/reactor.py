@@ -927,7 +927,7 @@ class Reactor(object):
         family, socktype, proto, canonname, sockaddr = resolution
         try:
             self.__sock_state = SocketState.connecting
-            self.socket = self.__socket_factory()
+            self.socket = self.__socket_factory(sockaddr)
             self.socket.connect(sockaddr)
         except socket.error as e:
             if e.errno == errno.EINPROGRESS:

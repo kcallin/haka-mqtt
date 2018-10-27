@@ -2,57 +2,23 @@ import socket
 import ssl
 
 
-def ip4_socket_factory():
-    """
-    Returns
-    -------
-    socket.socket
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setblocking(0)
-    return sock
+class SocketFactory(object):
+    def __init__(self):
+        pass
 
+    def __call__(self, addr):
+        if len(addr) == 2:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        elif len(addr) == 4:
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        else:
+            raise NotImplementedError(addr)
 
-def ip6_socket_factory():
-    """
-    Returns
-    -------
-    socket.socket
-    """
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-    sock.setblocking(0)
-    return sock
-
-
-class Ip4SslSocketFactory(object):
-    def __init__(self, context, hostname):
-        """
-
-        Parameters
-        ----------
-        context: ssl.SSLContext
-        hostname: str
-        """
-        self.__context = context
-        self.__hostname = hostname
-
-    def __call__(self):
-        """
-        Returns
-        -------
-        ssl.SSLSocket
-        """
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock = self.__context.wrap_socket(sock,
-                                          server_side=False,
-                                          do_handshake_on_connect=False,
-                                          suppress_ragged_eofs=True,
-                                          server_hostname=self.__hostname)
-        sock.setblocking(0)
+        sock.setblocking(False)
         return sock
 
 
-class Ip6SslSocketFactory(object):
+class SslSocketFactory(object):
     def __init__(self, context, hostname):
         """
 
@@ -64,17 +30,24 @@ class Ip6SslSocketFactory(object):
         self.__context = context
         self.__hostname = hostname
 
-    def __call__(self):
+    def __call__(self, addr):
         """
         Returns
         -------
         ssl.SSLSocket
         """
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+
+        if len(addr) == 2:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        elif len(addr) == 4:
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        else:
+            raise NotImplementedError(addr)
+
         sock = self.__context.wrap_socket(sock,
                                           server_side=False,
                                           do_handshake_on_connect=False,
                                           suppress_ragged_eofs=True,
                                           server_hostname=self.__hostname)
-        sock.setblocking(0)
+        sock.setblocking(False)
         return sock

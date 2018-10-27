@@ -5,7 +5,7 @@ from select import select
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.dns_async import AsyncFutureDnsResolver
 from haka_mqtt.reactor import ReactorProperties, Reactor
-from haka_mqtt.scheduler import Scheduler
+from haka_mqtt.scheduler import Scheduler, ClockScheduler
 from haka_mqtt.socket_factory import SslSocketFactory, SocketFactory
 
 
@@ -90,7 +90,7 @@ class MqttPollClient(Reactor):
     """
     def __init__(self, properties, log='haka'):
         self._clock = SystemClock()
-        self._scheduler = Scheduler()
+        self._scheduler = ClockScheduler(self._clock)
         self._async_name_resolver = AsyncFutureDnsResolver()
         self._selector = _PollClientSelector(self._async_name_resolver)
 
@@ -111,44 +111,18 @@ class MqttPollClient(Reactor):
         p.selector = self._selector
         p.address_family = properties.address_family
 
-        self._last_poll_time = None
-
         Reactor.__init__(self, p, log=log)
 
-    def start(self):
-        Reactor.start(self)
-        self._last_poll_time = None
-
     def poll(self, period=0.):
-        if period is None:
-            poll_end_time = None
-        else:
-            poll_end_time = self._clock.time() + period
+        poll_end_time = self._clock.time() + period
 
-        if self._last_poll_time is None:
-            self._last_poll_time = self._clock.time()
-
-        select_timeout = self._scheduler.remaining()
-        while poll_end_time is None or self._clock.time() < poll_end_time:
-            #
-            #                                 |---------poll_period-------------|------|
-            #                                 |--poll--|-----select_period------|
-            #                                 |  dur   |
-            #  ... ----|--------|-------------|--------|---------|--------------|------|---- ...
-            #            select   handle i/o     poll     select    handle i/o    poll
-            #
-            self._selector.select(select_timeout)
-
-            poll_time = self._clock.time()
-            time_since_last_poll = poll_time - self._last_poll_time
-
-            self._scheduler.poll(time_since_last_poll)
-            self._last_poll_time = poll_time
-
+        while self._clock.time() < poll_end_time:
             select_timeout = self._scheduler.remaining()
-            if select_timeout is not None:
-                last_poll_duration = self._clock.time() - self._last_poll_time
-                select_timeout -= last_poll_duration
+            if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
+                select_timeout = poll_end_time - self._clock.time()
 
-            if select_timeout is not None and select_timeout < 0:
+            if select_timeout < 0.:
                 select_timeout = 0
+
+            self._selector.select(select_timeout)
+            self._scheduler.poll()

@@ -132,7 +132,7 @@ class DebugFuture(object):
 class TestReactor(unittest.TestCase):
     def reactor_properties(self):
         p = ReactorProperties()
-        p.socket_factory = lambda sockaddr: self.socket
+        p.socket_factory = lambda getaddrinfo_params, sockaddr: self.socket
         p.endpoint = self.endpoint
         p.client_id = self.client_id
         p.keepalive_period = self.keepalive_period

@@ -53,32 +53,47 @@ class _DeadlineEntry(object):
 
 class Scheduler(object):
     def __init__(self):
-        self.__instant = 0
-        self.__queue = []
+        self._instant = 0
+        self._queue = []
 
     def instant(self):
-        return self.__instant
+        return self._instant
 
     def remaining(self):
-        if self.__queue:
-            rv = self.__queue[0].instant - self.instant()
+        if self._queue:
+            rv = self._queue[0].instant - self.instant()
         else:
             rv = None
 
         return rv
 
     def add(self, duration, cb):
-        de = _DeadlineEntry(self.instant() + duration, self.__queue, cb)
-        insort_right(self.__queue, de)
+        de = _DeadlineEntry(self.instant() + duration, self._queue, cb)
+        insort_right(self._queue, de)
         return Deadline(de)
 
     def poll(self, duration):
-        self.__instant += duration
+        self._instant += duration
 
-        while self.__queue and self.__queue[0].instant <= self.instant():
-            de = self.__queue.pop(0)
+        while self._queue and self._queue[0].instant <= self.instant():
+            de = self._queue.pop(0)
             de.expired = True
             de.cb()
 
     def __len__(self):
-        return len(self.__queue)
+        return len(self._queue)
+
+
+class ClockScheduler(Scheduler):
+    def __init__(self, clock):
+        Scheduler.__init__(self)
+        self.__clock = clock
+
+    def instant(self):
+        return self.__clock.time()
+
+    def poll(self):
+        while self._queue and self._queue[0].instant <= self.instant():
+            de = self._queue.pop(0)
+            de.expired = True
+            de.cb()

@@ -67,6 +67,8 @@ class ReactorProperties(object):
         re-connect.
     name_resolver: callable
         DNS resolver.
+    address_family: int
+        Address family; socket.AF_UNSPEC by default.
     username: str optional
     password: str optional
     selector: Selector
@@ -83,6 +85,7 @@ class ReactorProperties(object):
         self.username = None
         self.password = None
         self.selector = Selector()
+        self.address_family = socket.AF_UNSPEC
 
 
 @unique
@@ -436,6 +439,7 @@ class Reactor(object):
         assert 0 <= port <= 2**16-1
         assert isinstance(port, int)
         assert properties.selector is not None
+        assert isinstance(properties.address_family, int)
 
         if isinstance(log, (str, unicode)):
             self.__log = logging.getLogger(log)
@@ -446,11 +450,12 @@ class Reactor(object):
             assert hasattr(log, 'error')
             self.__log = log
 
-        self.__wbuf = bytearray()  #
-        self.__rbuf = bytearray()  #
+        self.__wbuf = bytearray()
+        self.__rbuf = bytearray()
 
-        self.__ssl_want_read = False  #
-        self.__ssl_want_write = False  #
+        self.__address_family = properties.address_family
+        self.__ssl_want_read = False
+        self.__ssl_want_write = False
 
         self.__client_id = properties.client_id
         self.__username = properties.username
@@ -792,9 +797,10 @@ class Reactor(object):
 
         self.__log.info('Looking up host %s:%d.', self.__host, self.__port)
         self.__name_resolution_future = self.__name_resolver(self.__host,
-                                      self.__port,
-                                      socktype=socket.SOCK_STREAM,
-                                      proto=socket.IPPROTO_TCP)
+                                                             self.__port,
+                                                             family=self.__address_family,
+                                                             socktype=socket.SOCK_STREAM,
+                                                             proto=socket.IPPROTO_TCP)
         self.__name_resolution_future.add_done_callback(self.__on_name_resolution)
 
     def __on_name_resolution(self, future):

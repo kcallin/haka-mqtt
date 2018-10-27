@@ -393,37 +393,6 @@ class Reactor(object):
         If `str` then calls logging.getLogger(log) to acquire a logger;
         otherwise asserts that `log` has `debug`, `info`, etc. methods
         and uses log as if it were a `logging.getLogger` object.
-
-    Attributes
-    -----------
-    on_connect_fail: callable(r: Reactor)
-    on_disconnect: callable(r: Reactor)
-    on_connack: callable(r: Reactor, p: MqttConnack)
-        Called immediately upon receiving a `MqttConnack` packet from
-        the remote.  The `reactor.state` will be `ReactorState.started`
-        or `ReactorState.stopping` if the reactor is shutting down.
-    on_suback: callable(r: Reactor, p: MqttSuback)
-        Called immediately upon receiving a `MqttSuback` packet from the
-        remote.
-    on_unsuback: callable(r: Reactor, p: MqttUnsuback)
-        Called immediately upon receiving a `MqttUnsuback` packet from
-        the remote.
-    on_pubrec: callable(r: Reactor, p: MqttPubrec)
-        Called immediately upon receiving a `MqttPubrec` packet from the
-        remote.  This is part of the QoS=2 message send path.
-    on_pubcomp: callable(r: Reactor, p: MqttPubcomp)
-        Called immediately upon receiving a `MqttPubcomp` packet from the
-        remote.  This is part of the QoS=2 message send path.
-    on_publish: callable(r: Reactor, p: MqttPublish)
-        Called immediately upon receiving a `MqttSuback` packet from the
-        remote.  This is part of the QoS=0, 1, and 2 message receive
-        paths.
-    on_puback: callable(r: Reactor, p: MqttPuback)
-        Called immediately upon receiving a `MqttPuback` packet from the
-        remote.  This method is part of the QoS=1 message send path.
-    on_pubrel: callable(r: Reactor, p: MqttPubrel)
-        Called immediately upon receiving a `MqttPubrel` packet from the
-        remote.  This is part of the QoS=2 message receive path.
     """
     def __init__(self, properties, log='haka'):
         assert properties.client_id is not None
@@ -515,49 +484,119 @@ class Reactor(object):
         # Want read
         self.__selector = _AssertSelectAdapter(self, properties.selector)
 
-    # # Connection Callbacks
-    # self.on_connect_fail = None
-    # self.on_disconnect = None
-    # self.on_connack = None
+    # Connection Callbacks
     def on_connect_fail(self, reactor):
+        """
+
+        Parameters
+        ----------
+        reactor: Reactor
+        """
         pass
 
     def on_disconnect(self, reactor):
+        """
+
+        Parameters
+        ----------
+        reactor: Reactor
+        """
         pass
 
     def on_connack(self, reactor, connack):
+        """Called immediately upon receiving a `MqttConnack` packet from
+        the remote.  The `reactor.state` will be `ReactorState.started`
+        or `ReactorState.stopping` if the reactor is shutting down.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        connack: MqttConnack
+        """
         pass
 
-    # # Send path
-    # self.on_pubrec = None
-    # self.on_pubcomp = None
+    # Send path
     def on_pubrec(self, reactor, pubrec):
-        pass
+        """Called immediately upon receiving a `MqttPubrec` packet from
+        the remote.  This is part of the QoS=2 message send path.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        pubrec: MqttPubrec
+        """
 
     def on_pubcomp(self, reactor, pubcomp):
+        """Called immediately upon receiving a `MqttPubcomp` packet
+        from the remote.  This is part of the QoS=2 message send path.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        pubcomp: MqttPubcomp
+
+        Returns
+        -------
+
+        """
         pass
 
-    # # Subscribe path
-    # self.on_suback = None
-    # self.on_unsuback = None
-    #
+    # Subscribe path
     def on_suback(self, reactor, suback):
+        """Called immediately upon receiving a `MqttSuback` packet from
+        the remote.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        suback: MqttSuback
+        """
         pass
 
     def on_unsuback(self, reactor, unsuback):
+        """Called immediately upon receiving a `MqttUnsuback` packet
+        from the remote.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        unsuback: MqttUnsuback
+        """
         pass
 
-    # # Receive path
-    # self.on_publish = None
-    # self.on_puback = None
-    # self.on_pubrel = None
+    # Receive path
     def on_publish(self, reactor, publish):
+        """Called immediately upon receiving a `MqttSuback` packet from
+        the remote.  This is part of the QoS=0, 1, and 2 message receive
+        paths.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        publish: MqttPublish
+        """
         pass
 
     def on_puback(self, reactor, puback):
+        """Called immediately upon receiving a `MqttPuback` packet from
+        the remote.  This method is part of the QoS=1 message send path.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        puback: MqttPuback
+        """
         pass
 
     def on_pubrel(self, reactor, pubrel):
+        """Called immediately upon receiving a `MqttPubrel` packet from
+        the remote.  This is part of the QoS=2 message receive path.
+
+        Parameters
+        ----------
+        reactor: Reactor
+        pubrel: MqttPubrel
+        """
         pass
 
     @property
@@ -1808,7 +1847,7 @@ class Reactor(object):
         elif self.mqtt_state in (MqttState.connected, MqttState.mute):
             on_disconnect_cb = self.on_disconnect
         elif self.mqtt_state in INACTIVE_MQTT_STATES:
-            pass
+            on_disconnect_cb = None
         else:
             raise NotImplementedError(self.state)
 

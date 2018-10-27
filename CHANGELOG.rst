@@ -1,10 +1,12 @@
-0.1.2 (2018-10-22)
+0.2.0 (2018-10-xx)
 ===================
-#2. Fix: MqttPublish.payload somtimes has a type that is not bytes.
-    https://github.com/kcallin/mqtt-codec/issues/2
 
-0.1.1 (2018-10-22)
+New
+---
+#9: Run without keepalive.
+    https://github.com/kcallin/haka-mqtt/issues/9
+
+
+0.1.0 (2018-10-25)
 ===================
-* Documentation improvements.
-* MqttConnect.__str__ no longer shows user/pass.
-* setup.py:install_requires now compatible with setuptools 18.
+* Initial release.

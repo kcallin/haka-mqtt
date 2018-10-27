@@ -1447,8 +1447,11 @@ class Reactor(object):
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pingresp)
         elif self.mqtt_state is MqttState.connected:
-            self.__log.info('Received %s.', repr(pingresp))
-            self.__pingreq_active = False
+            if self.__pingreq_active:
+                self.__log.info('Received %s.', repr(pingresp))
+                self.__pingreq_active = False
+            else:
+                self.__log.warning('Received unsolicited %s.', repr(pingresp))
         else:
             raise NotImplementedError(self.mqtt_state)
 

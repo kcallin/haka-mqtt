@@ -326,7 +326,7 @@ class AddressReactorError(ReactorError):
             hasattr(other, 'gaierror')
             and self.gaierror.errno == other.gaierror.errno
             and hasattr(other, 'gaierror')
-            and self.gaierror.message == other.gaierror.message
+            and self.gaierror.strerror == other.gaierror.strerror
         )
 
 
@@ -814,6 +814,7 @@ class Reactor(object):
         """
         self.__assert_state_rules()
         assert 0 <= qos <= 2
+        assert isinstance(payload, bytes)
 
         req = MqttPublishTicket(self.__send_path_packet_ids.acquire(), topic, payload, qos, retain)
         self.__preflight_queue.append(req)

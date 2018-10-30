@@ -63,6 +63,7 @@ class MqttPublishTicket(MqttRequest):
 
         assert 0 <= qos <= 2
         assert isinstance(retain, bool)
+        assert isinstance(payload, bytes)
 
         self.topic = topic
         self.payload = payload

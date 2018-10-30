@@ -91,7 +91,6 @@ class MqttPublishTicket(MqttRequest):
     def _set_dupe(self):
         self.__dupe = True
 
-
     def _set_status(self, s):
         """
         Parameters

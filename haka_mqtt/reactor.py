@@ -790,9 +790,9 @@ class Reactor(object):
         return req
 
     def publish(self, topic, payload, qos, retain=False):
-        """Publish may be called in any state.  It will place a packet
-        onto the preflight queue but no packet_id will be assigned
-        until the packet is placed in-flight.
+        """Places a publish packet on the preflight queue.  The reactor
+        will make best effort to launch packets from the preflight queue
+        and send them to the server.
 
         Parameters
         -----------
@@ -811,6 +811,8 @@ class Reactor(object):
         Return
         -------
         MqttPublishTicket
+            A publish ticket.  The returned object will satisfy
+            `ticket.status is MqttPublishStatus.preflight`.
         """
         self.__assert_state_rules()
         assert 0 <= qos <= 2

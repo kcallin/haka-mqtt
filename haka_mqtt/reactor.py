@@ -1801,18 +1801,21 @@ class Reactor(object):
 
         return num_bytes_written
 
-    def __del__(self):
-        # https://eli.thegreenplace.net/2009/06/12/safely-using-destructors-in-python/
-        # https://www.electricmonk.nl/log/2008/07/07/python-destructor-and-garbage-collection-notes/
-        # https://docs.python.org/2/reference/datamodel.html#object.__del__
-        try:
-            if self.socket is not None:
-                self.socket.shutdown(socket.SHUT_RDWR)
-        except socket.error as e:
-            if e.errno == errno.ENOTCONN:
-                pass
-            else:
-                raise NotImplementedError(e)
+    # https://eli.thegreenplace.net/2009/06/12/safely-using-destructors-in-python/
+    # https://www.electricmonk.nl/log/2008/07/07/python-destructor-and-garbage-collection-notes/
+    # https://docs.python.org/2/reference/datamodel.html#object.__del__
+    #
+    # The reactor contains circular references because (at least) the
+    # scheduler.  The reactor has a reference to the scheduler, the
+    # scheduler grants ticket references to the reactor, and the tickets
+    # contain references to the scheduler.
+    #
+    # How to implement __del__?  Easiest just to call terminate which
+    # closes all resources.
+    #
+    # def __del__(self):
+    #     pass
+    #
 
     def __terminate_socket(self):
         """Cleans up all socket-related resources.

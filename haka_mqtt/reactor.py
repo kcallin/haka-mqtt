@@ -1747,6 +1747,7 @@ class Reactor(object):
             self.__ssl_want_write = True
             self.__update_io_notification()
         except socket.error as e:
+            self.__log.warning('SSL handshake failure: %s.', e)
             self.__abort(e)
         else:
             self.__set_connack()

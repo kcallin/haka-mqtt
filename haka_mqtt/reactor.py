@@ -1801,6 +1801,19 @@ class Reactor(object):
 
         return num_bytes_written
 
+    def __del__(self):
+        # https://eli.thegreenplace.net/2009/06/12/safely-using-destructors-in-python/
+        # https://www.electricmonk.nl/log/2008/07/07/python-destructor-and-garbage-collection-notes/
+        # https://docs.python.org/2/reference/datamodel.html#object.__del__
+        try:
+            if self.socket is not None:
+                self.socket.shutdown(socket.SHUT_RDWR)
+        except socket.error as e:
+            if e.errno == errno.ENOTCONN:
+                pass
+            else:
+                raise NotImplementedError(e)
+
     def __terminate_socket(self):
         """Cleans up all socket-related resources.
         * Closes any name resolution future and sets to None.

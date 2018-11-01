@@ -301,6 +301,30 @@ class SocketReactorError(ReactorError):
         return self.errno == other.errno
 
 
+class SslReactorError(ReactorError):
+    """A socket error-code in `errno.errorcode`.
+
+    Parameters
+    ----------
+    error: ssl.SSLError
+    """
+    def __init__(self, ssl_error):
+        assert ssl_error is not None
+
+        self.__error = ssl_error
+
+    @property
+    def error(self):
+        """ssl.SSLError: error value."""
+        return self.__error
+
+    def __repr__(self):
+        return 'SslReactorError({})'.format(self.error)
+
+    def __eq__(self, other):
+        return hasattr(other, 'error') and self.error == other.error
+
+
 class AddressReactorError(ReactorError):
     """Failed to lookup a valid address.
 
@@ -1205,6 +1229,15 @@ class Reactor(object):
                 self.__ssl_want_write = True
             except ssl.SSLWantReadError:
                 self.__ssl_want_read = True
+            except ssl.SSLError as e:
+                # TODO: Really?  The error string needs to be used to
+                # figure out that the read operation has timed out?
+                # to = ssl.SSLError('The read operation timed out')
+                if e.message == 'The read operation timed out':
+                    self.__ssl_want_read = True
+                else:
+                    self.__log.error("SSLError while reading socket; %s.", ReprOnStr(e))
+                    self.__abort(SslReactorError(e))
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
@@ -1790,6 +1823,9 @@ class Reactor(object):
                 self.__ssl_want_read = True
             except ssl.SSLWantWriteError:
                 self.__ssl_want_write = True
+            except ssl.SSLError as e:
+                self.__log.error("SSLError while writing to socket; %s.", ReprOnStr(e))
+                self.__abort(SslReactorError(e))
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.

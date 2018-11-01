@@ -19,7 +19,7 @@ class ExampleMqttClient(MqttPollClient):
         properties.host, properties.port = endpoint
         properties.address_family = socket.AF_UNSPEC
 
-        MqttPollClient.__init__(self, properties)
+        super(type(self), self).__init__(properties)
 
         self.__req_queue = set()
         self.__ack_queue = set()

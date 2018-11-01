@@ -1,12 +1,14 @@
 import socket
 import ssl
 from select import select
+from time import sleep
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.dns_async import AsyncFutureDnsResolver
+from haka_mqtt.dns_sync import SynchronousFutureDnsResolver
 from haka_mqtt.reactor import ReactorProperties, Reactor
 from haka_mqtt.scheduler import Scheduler, ClockScheduler
-from haka_mqtt.socket_factory import SslSocketFactory, SocketFactory
+from haka_mqtt.socket_factory import SslSocketFactory, SocketFactory, BlockingSocketFactory, BlockingSslSocketFactory
 
 
 class _PollClientSelector(object):
@@ -125,4 +127,53 @@ class MqttPollClient(Reactor):
                 select_timeout = 0
 
             self._selector.select(select_timeout)
+            self._scheduler.poll()
+
+
+class BlockingMqttClient(Reactor):
+    """
+
+    Parameters
+    ----------
+    properties: MqttPollClientProperties
+    """
+    def __init__(self, properties, log='haka'):
+        self._clock = SystemClock()
+        self._scheduler = ClockScheduler(self._clock)
+
+        endpoint = (properties.host, properties.port)
+
+        p = ReactorProperties()
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        p.socket_factory = BlockingSslSocketFactory(ssl_context)
+        p.endpoint = endpoint
+        p.keepalive_period = properties.keepalive_period
+        p.client_id = properties.client_id
+        p.scheduler = self._scheduler
+        p.name_resolver = SynchronousFutureDnsResolver()
+        p.address_family = properties.address_family
+
+        Reactor.__init__(self, p, log=log)
+
+    def poll(self, period=0.):
+        poll_end_time = self._clock.time() + period
+
+        while self._clock.time() < poll_end_time:
+            select_timeout = self._scheduler.remaining()
+            if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
+                select_timeout = poll_end_time - self._clock.time()
+
+            if select_timeout <= 0.:
+                select_timeout = 0.00001
+
+            if self.socket is not None:
+                self.socket.settimeout(select_timeout)
+
+            if self.want_write():
+                self.write()
+            elif self.want_read():
+                self.read()
+            else:
+                sleep(select_timeout)
+
             self._scheduler.poll()

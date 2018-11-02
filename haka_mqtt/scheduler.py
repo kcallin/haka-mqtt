@@ -57,9 +57,21 @@ class Scheduler(object):
         self._queue = []
 
     def instant(self):
+        """Returns the current tick.
+
+        Returns
+        -------
+        int
+        """
         return self._instant
 
     def remaining(self):
+        """Duration remaining to next scheduled callback.
+
+        Returns
+        -------
+        int or None
+        """
         if self._queue:
             rv = self._queue[0].instant - self.instant()
         else:
@@ -68,11 +80,32 @@ class Scheduler(object):
         return rv
 
     def add(self, duration, cb):
+        """Adds `duration` to `self.instant()` and calls all scheduled
+        callbacks.
+
+        Parameters
+        ----------
+        duration: int
+            Number of ticks passed.
+        cb: callable()
+            No calling with so
+
+        Returns
+        -------
+        Deadline
+        """
         de = _DeadlineEntry(self.instant() + duration, self._queue, cb)
         insort_right(self._queue, de)
         return Deadline(de)
 
     def poll(self, duration):
+        """Adds `duration` to `self.instant()` and calls all scheduled
+        callbacks.
+
+        Parameters
+        ----------
+        duration: int
+        """
         self._instant += duration
 
         while self._queue and self._queue[0].instant <= self.instant():
@@ -90,9 +123,17 @@ class ClockScheduler(Scheduler):
         self.__clock = clock
 
     def instant(self):
+        """Current clock instant.
+
+        Returns
+        -------
+        int
+            Current clock scheduler.
+        """
         return self.__clock.time()
 
     def poll(self):
+        """Calls all callbacks awaiting execution to this point."""
         while self._queue and self._queue[0].instant <= self.instant():
             de = self._queue.pop(0)
             de.expired = True

@@ -6,9 +6,13 @@ class Deadline(object):
         self.__deadline_entry = deadline_entry
 
     def expired(self):
+        """bool: True if callback has already been called; False
+        otherwise."""
         return self.__deadline_entry.expired
 
     def cancel(self):
+        """Stops a scheduled callback from being made; has no effect if
+        cancel is called after the callback has already been made."""
         self.__deadline_entry.cancel()
 
 

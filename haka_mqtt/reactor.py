@@ -69,8 +69,9 @@ class ReactorProperties(object):
         DNS resolver.
     address_family: int
         Address family; one of the socket.AF_* constants (eg.
-        socket.AF_UNSPEC for any family, socket.AF_INET for IP4
-        socket.AF_INET6 for IP6).
+        `socket.AF_UNSPEC` for any family, `socket.AF_INET` for IP4
+        `socket.AF_INET6` for IP6).  Set to `socket.AF_UNSPEC` by
+        default.
     username: str optional
     password: str optional
     selector: Selector

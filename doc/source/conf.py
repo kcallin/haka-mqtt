@@ -50,6 +50,9 @@ extensions = [
     'sphinxcontrib.plantuml',
 ]
 
+plantuml = 'java -jar /path/to/plantuml.jar'
+plantuml = '/usr/bin/plantuml'
+
 seqdiag_fontpath = '/usr/share/fonts/liberation/LiberationSerif-Regular.ttf'
 
 # Add any paths that contain templates here, relative to this directory.

@@ -9,6 +9,7 @@ The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
    :maxdepth: 2
    :caption: Contents:
 
+   reactor_lifecycle
    send_path
    receive_path
    subscribe_path

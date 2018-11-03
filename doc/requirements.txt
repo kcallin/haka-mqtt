@@ -1,3 +1,4 @@
 sphinxcontrib.seqdiag
+sphinxcontrib.plantuml
 enum34
 mqtt-codec

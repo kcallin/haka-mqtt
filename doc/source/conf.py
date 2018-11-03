@@ -47,6 +47,7 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'sphinxcontrib.seqdiag',
+    'sphinxcontrib.plantuml',
 ]
 
 seqdiag_fontpath = '/usr/share/fonts/liberation/LiberationSerif-Regular.ttf'

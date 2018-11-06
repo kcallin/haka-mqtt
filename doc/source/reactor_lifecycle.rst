@@ -102,6 +102,27 @@ cleanly disconnect from a server.
         "stopping" -> "stopping" [label="stop"];
     }
 
+Subscribe/Unsubscribe
+----------------------
+
+Subscribe/unsubscribe calls made before a call to ``stop`` will have
+their associated packets delivered before the socket outgoing write
+channel is closed.  Whether the packets are acknowledged on not depends
+on server implementation.
+
+Publish
+--------
+
+Calls made to publish before a call to ``stop`` will have the associated
+packets delivered before the socket's outgoing write channel is closed.
+The server may or may not acknowledge QoS=1 publishes before closing the
+socket.  QoS=2 packets may be acknowledge with a ``pubrec`` packet but
+the reactor will not acknowledge the ``pubrec`` packet with a ``pubrel``
+since the outgoing socket stream would already have been closed.  Any
+``pubrel`` packets qeued before the call to stop will be delivered
+before the outgoing write channel is closed and may or may not be
+acknowledged by the server with a ``pubcomp``.
+
 
 Terminate
 ==========
@@ -135,26 +156,3 @@ means before the ``terminate`` call has returned.
 
         "error" -> "error" [label="terminate"];
     }
-
-
-Subscribe/Unsubscribe
-----------------------
-
-Calls made to subscribe/unsubscribe made prior to a ``stop`` call will
-have their associated packets delivered to the server before the reactor
-enters its ``mute`` state.  Callbacks to ``on_suback`` and
-``on_unsuback`` will only be made for whatever acks are received prior
-to the reactor entering a final state.  Calls to subscribe/unsubscribe
-made after a ``stop`` call place packets on the preflight queue but
-these packets will not be delivered before the reactor enters ``mute``
-state and the packets will eventually be discarded if the reactor is
-restarted after entering a final state.
-
-
-Publish
---------
-
-Calls to publish ``stopping`` state will add ``MqttPublish`` packets to
-the pre-flight queue but these packets will not be delivered to the
-server before a disconnect.  A successfull reconnection beginning with
-a call to start will see them subseuqently delivered.

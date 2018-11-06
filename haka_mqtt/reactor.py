@@ -1598,13 +1598,13 @@ class Reactor(object):
         assert self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute)
 
         if self.sock_state in (SocketState.handshake, SocketState.connected):
-            self.__log.warning('Remote has closed remote->local writes; Aborting.')
+            self.__log.warning('Remote has unexpectedly closed remote->local writes; Aborting.')
             self.__abort(MutePeerReactorError())
         elif self.sock_state is SocketState.mute:
             # Socket sending already closed (socket is mute).
             # If socket receive is also closed (socket is deaf), then
             # it is time for the socket to be closed.
-            self.__log.warning('Remote has gracefully closed remote->local writes; Stopped.')
+            self.__log.info('Remote has gracefully closed remote->local writes; Stopped.')
             self.__terminate(ReactorState.stopped, None)
         else:
             raise NotImplementedError(self.sock_state)

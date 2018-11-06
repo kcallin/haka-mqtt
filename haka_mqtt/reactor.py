@@ -1799,7 +1799,7 @@ class Reactor(object):
         assert self.__abort_deadline is None
 
         self.__log.info('Connected.')
-        self.__abort_deadline = self.__scheduler.add(1.5 * self.keepalive_period,
+        self.__abort_deadline = self.__scheduler.add(self.abort_period,
                                                      self.__abort_timeout)
 
         if hasattr(self.socket, 'do_handshake'):

@@ -3,9 +3,8 @@ User Guide
 ===========
 
 The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
-It contains a core mqtt reactor class that can be harnessed in a number
-of ways depending on the eventcan be harnessed in a nubmer
-of different ways depending on the event loop you are using.
+It contains a core mqtt reactor class that is harnessed to event loops
+with different frontends.
 
 
 .. toctree::

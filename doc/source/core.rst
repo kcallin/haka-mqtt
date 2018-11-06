@@ -10,5 +10,3 @@ Core Reactor
    send_path
    receive_path
    subscribe_path
-   stop
-   terminate

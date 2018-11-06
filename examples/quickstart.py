@@ -1,3 +1,7 @@
+"""Basic client that connects to test.mosquitto.org, subscribes
+to a topic, publishes to that topic, awaits notification of
+publish on that topic, then cleanly disconnects."""
+
 # Standard python Packages
 import logging
 

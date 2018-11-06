@@ -8,9 +8,7 @@ Installation through pip is supported:
 
    pip install haka-mqtt
 
-A basic client that starts, subscribes to a topic, publishes a message
-to that that topic, awaits a response, then cleanly disconnects is short
-and sweet:
+A basic mqtt client is short and sweet:
 
 .. literalinclude:: ../../examples/quickstart.py
 

@@ -25,6 +25,7 @@ QoS 1
     Client -> Haka: publish call (QoS=1)
     note right: publish packet enqueued.
     Client <- Haka: publish return
+    == ... ==
     Client -> Haka: write call
               Haka -> Socket: send publish
     note right: publish packet transferred to socket write buffer.

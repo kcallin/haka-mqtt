@@ -1,14 +1,30 @@
+import os
 import socket
 import ssl
+from datetime import datetime
 from select import select
 from time import sleep
 
 from haka_mqtt.clock import SystemClock
 from haka_mqtt.dns_async import AsyncFutureDnsResolver
 from haka_mqtt.dns_sync import SynchronousFutureDnsResolver
-from haka_mqtt.reactor import ReactorProperties, Reactor
-from haka_mqtt.scheduler import Scheduler, ClockScheduler
+from haka_mqtt.reactor import ReactorProperties, Reactor, ACTIVE_STATES
+from haka_mqtt.scheduler import ClockScheduler
 from haka_mqtt.socket_factory import SslSocketFactory, SocketFactory, BlockingSocketFactory, BlockingSslSocketFactory
+
+
+def generate_client_id():
+    """Generates a client id based on current time, hostname, and
+    process-id.
+
+    Returns
+    -------
+    str
+    """
+    return 'client-{}-{}-{}'.format(
+        datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        socket.gethostname(),
+        os.getpid())
 
 
 class _PollClientSelector(object):
@@ -69,6 +85,9 @@ class MqttPollClientProperties(object):
     """
     Attributes
     ----------
+    client_id: str optional
+        The MQTT client id to pass to the MQTT server.  A client id will
+        be randomly generated based on .
     address_family: int
         Address family; one of the socket.AF_* constants (eg.
         socket.AF_UNSPEC for any family, socket.AF_INET for IP4
@@ -107,7 +126,10 @@ class MqttPollClient(Reactor):
 
         p.endpoint = endpoint
         p.keepalive_period = properties.keepalive_period
-        p.client_id = properties.client_id
+        if properties.client_id is None:
+            p.client_id = generate_client_id()
+        else:
+            p.client_id = properties.client_id
         p.scheduler = self._scheduler
         p.name_resolver = self._async_name_resolver
         p.selector = self._selector
@@ -118,7 +140,7 @@ class MqttPollClient(Reactor):
     def poll(self, period=0.):
         poll_end_time = self._clock.time() + period
 
-        while self._clock.time() < poll_end_time:
+        while self._clock.time() < poll_end_time and self.state in ACTIVE_STATES:
             select_timeout = self._scheduler.remaining()
             if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
                 select_timeout = poll_end_time - self._clock.time()
@@ -144,11 +166,18 @@ class BlockingMqttClient(Reactor):
         endpoint = (properties.host, properties.port)
 
         p = ReactorProperties()
-        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        p.socket_factory = BlockingSslSocketFactory(ssl_context)
+        if properties.ssl:
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            p.socket_factory = BlockingSslSocketFactory(ssl_context)
+        else:
+            p.socket_factory = BlockingSocketFactory()
+
         p.endpoint = endpoint
         p.keepalive_period = properties.keepalive_period
-        p.client_id = properties.client_id
+        if properties.client_id is None:
+            p.client_id = generate_client_id()
+        else:
+            p.client_id = properties.client_id
         p.scheduler = self._scheduler
         p.name_resolver = SynchronousFutureDnsResolver()
         p.address_family = properties.address_family
@@ -158,7 +187,7 @@ class BlockingMqttClient(Reactor):
     def poll(self, period=0.):
         poll_end_time = self._clock.time() + period
 
-        while self._clock.time() < poll_end_time:
+        while self._clock.time() < poll_end_time and self.state in ACTIVE_STATES:
             select_timeout = self._scheduler.remaining()
             if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
                 select_timeout = poll_end_time - self._clock.time()

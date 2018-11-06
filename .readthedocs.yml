@@ -8,5 +8,4 @@
 # https://github.com/rtfd/readthedocs.org/issues/407
 
 build:
-  # image: latest
-  image: readthedocs/build:3.0
+  image: latest

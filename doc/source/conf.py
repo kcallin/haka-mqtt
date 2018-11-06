@@ -46,12 +46,13 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
+    'sphinx.ext.graphviz',
     'sphinxcontrib.seqdiag',
     'sphinxcontrib.plantuml',
 ]
 
-plantuml = 'java -jar /path/to/plantuml.jar'
-plantuml = '/usr/bin/plantuml'
+# plantuml = 'java -jar /path/to/plantuml.jar'
+# plantuml = '/usr/bin/plantuml'
 
 seqdiag_fontpath = '/usr/share/fonts/liberation/LiberationSerif-Regular.ttf'
 

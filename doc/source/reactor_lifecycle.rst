@@ -4,10 +4,79 @@ Reactor Lifecycle
 
 This is a uml diagram.
 
-.. uml::
+.. graphviz::
 
-   Alice -> Bob: Hi!
-   Alice <- Bob: How are you?
+    digraph START {
+        node [shape=circle,fontsize=8,fixedsize=true,width=0.9];
+        edge [fontsize=8];
+        rankdir=LR;
+
+        "init" [shape="doublecircle"];
+        "stopped" [shape="doublecircle"];
+        "error" [shape="doublecircle"];
+
+        subgraph cluster0 {
+            graph[style="invisible"];
+
+            "init" -> "starting" [label="start"];
+            "starting" -> "started";
+            "started" -> "stopping" [label="stop"];
+            "stopping" -> "stopped";
+        }
+
+        "error" -> "starting" [label="start"];
+
+        "stopped" -> "starting" [label="start"];
+        "starting" -> "starting" [label="start"];
+        "started" -> "started" [label="start"];
+        "stopping" -> "stopping" [label="start"];
+    }
+
+
+.. graphviz::
+
+    digraph TERMINATE {
+        node [shape=circle,fontsize=8,fixedsize=true,width=0.9];
+        edge [fontsize=8];
+        rankdir=LR;
+
+        "init" [shape="doublecircle"];
+        "stopped" [shape="doublecircle"];
+        "error" [shape="doublecircle"];
+
+        "init" -> "starting" [label="start"];
+        "starting" -> "started";
+        "started" -> "stopping" [label="stop"];
+        "stopping" -> "stopped";
+
+        "init" -> "stopped" [label="terminate"];
+        "starting" -> "stopped" [label="terminate"];
+        "started" -> "stopped" [label="terminate"];
+        "stopping" -> "stopped"  [label="terminate"];
+    }
+
+
+.. graphviz::
+
+    digraph STOP {
+        node [shape=circle,fontsize=8,fixedsize=true,width=0.9];
+        edge [fontsize=8];
+        rankdir=LR;
+
+        "init" [shape="doublecircle"];
+        "stopped" [shape="doublecircle"];
+        "error" [shape="doublecircle"];
+
+        "init" -> "starting" [label="start"];
+        "starting" -> "started";
+        "started" -> "stopping" [label="stop"];
+        "stopping" -> "stopped";
+
+        "init" -> "stopped" [label="stop"];
+        "starting" -> "stopping" [label="stop"];
+        "stopping" -> "stopping"  [label="stop"];
+    }
+
 
 
 

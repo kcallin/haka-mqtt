@@ -36,8 +36,8 @@ The normal reactor lifecycle is summarized in this state diagram:
 Start
 ======
 
-Calls to `start` can be used to activate an inactive reactor otherwise
-they have no effect.
+Calls to :meth:`haka_mqtt.reactor.Reactor.start` can be used to activate an inactive
+reactor otherwise they have no effect.
 
 
 .. graphviz::
@@ -72,8 +72,8 @@ they have no effect.
 Stop
 =====
 
-Calls to `stop` may be used to at the earliest possible opportunity
-cleanly disconnect from a server.
+Calls to :meth:`haka_mqtt.reactor.Reactor.stop` may be used to at the
+earliest possible opportunity cleanly disconnect from a server.
 
 .. graphviz::
 
@@ -105,7 +105,7 @@ cleanly disconnect from a server.
 Subscribe/Unsubscribe
 ----------------------
 
-Subscribe/unsubscribe calls made before a call to ``stop`` will have
+Subscribe/unsubscribe calls made before a call to :meth:`haka_mqtt.reactor.Reactor.stop` will have
 their associated packets delivered before the socket outgoing write
 channel is closed.  Whether the packets are acknowledged on not depends
 on server implementation.
@@ -113,7 +113,7 @@ on server implementation.
 Publish
 --------
 
-Calls made to publish before a call to ``stop`` will have the associated
+Calls made to publish before a call to :meth:`haka_mqtt.reactor.Reactor.stop` will have the associated
 packets delivered before the socket's outgoing write channel is closed.
 The server may or may not acknowledge QoS=1 publishes before closing the
 socket.  QoS=2 packets may be acknowledge with a ``pubrec`` packet but
@@ -127,7 +127,7 @@ acknowledged by the server with a ``pubcomp``.
 Terminate
 ==========
 
-A ``terminate`` call prompty closes all haka-mqtt reactor resources and
+A :meth:`haka_mqtt.reactor.Reactor.terminate` call prompty closes all haka-mqtt reactor resources and
 places the reactor into a ``stopped`` state.  All schedule deadlines are
 promptly cancelled.  All socket resources are promptly closed.  Any
 asynchronous hostname lookups are cancelled.  "Prompt" in this case

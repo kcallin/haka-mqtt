@@ -217,7 +217,7 @@ def get_packet_type(d, packet_id, packet_type):
 
     Returns
     -------
-    object
+    object or None
         Mqtt packet with given packet id and type.
     """
     try:
@@ -645,7 +645,8 @@ class Reactor(object):
     @property
     def abort_period(self):
         """int: Connection will be closed if bytes have not been
-        received from remote in this many seconds."""
+        received from remote in this many seconds.  Typically this is
+        1.5x the self.keepalive_period."""
         """float: 
         It is the responsibility of the Client to ensure that the
         interval between Control Packets being sent does not exceed the

@@ -6,91 +6,84 @@ Receive Path
 QoS 0
 ======
 
-.. seqdiag::
-   :desctable:
 
-   seqdiag {
-      activation = none;
+.. uml::
 
-      C; H; S;
-
-           H <- S [diagonal, label = "Publish"];
-      C <- H [label="on_publish call"];
-      C -> H [label="on_publish return"];
-
-      C [description="Client"];
-      H [description="haka-mqtt"];
-      S [description="MQTT Server"];
-   }
+    Client -> Haka: read call
+              Haka <- Socket: recv publish(QoS=0)
+    Client <- Haka: on_publish call
+    Client -> Haka: on_publish return
+    Client <- Haka: read return
 
 
 QoS 1
 ======
 
-.. seqdiag::
-   :desctable:
+.. uml::
 
-   seqdiag {
-      activation = none;
+    Client -> Haka: read call
+              Haka <- Socket: recv publish(QoS=1)
+    Client <- Haka: on_publish call
+    Client -> Haka: on_publish return
+    note right: enqueue puback
+    Client <- Haka: read return
+    == ... ==
+    Client -> Haka: write call
+              Haka -> Socket: send puback
+    note right: dequeue puback
+    Client <- Haka: write return
 
-      C; H; S;
-
-           H <- S [diagonal, label = "Publish"];
-      C <- H [label="on_publish call"];
-      C -> H [label="on_publish return"];
-           H -> S [diagonal, label = "Puback"];
-
-      C [description="Client"];
-      H [description="haka-mqtt"];
-      S [description="MQTT Server"];
-   }
 
 QoS 1 with Pre-Ack Disconnect
 ==============================
 
-.. seqdiag::
-   :desctable:
+.. uml::
 
-   seqdiag {
-      activation = none;
+    Client -> Haka: read call
+              Haka <- Socket: recv publish(QoS=1)
+    Client <- Haka: on_publish call
+    Client -> Haka: on_publish return
+    note right: enqueue puback
+    Client <- Haka: read return
+    == socket disconnect, reactor start, puback cleared ==
+    Client -> Haka: read call
+              Haka <- Socket: recv publish(QoS=1, dupe=True)
+    Client <- Haka: on_publish call
+    Client -> Haka: on_publish return
+    note right: enqueue puback
+    Client <- Haka: read return
+    == ... ==
+    Client -> Haka: write call
+              Haka -> Socket: send puback
+    note right: dequeue puback
+    Client <- Haka: write return
 
-      C; H; S;
-
-           H <- S [diagonal, label = "Publish"];
-      C <- H [label="on_publish call"];
-      C -> H [label="on_publish return"];
-      === Disconnect ===
-           H <- S [diagonal, label = "Publish"];
-      C <- H [label="on_publish call"];
-      C -> H [label="on_publish return"];
-           H -> S [diagonal, label = "Puback"];
-
-      C [description="Client"];
-      H [description="haka-mqtt"];
-      S [description="MQTT Server"];
-   }
 
 QoS 2
 ======
 
-.. seqdiag::
-   :desctable:
+.. uml::
 
-   seqdiag {
-      activation = none;
-
-      C; H; S;
-
-           H <- S [diagonal, label = "Publish"];
-      C <- H [label="on_publish call"];
-      C -> H [label="on_publish return"];
-           H -> S [diagonal, label = "Pubrec"];
-           H <- S [diagonal, label = "Pubrel"];
-      C <- H [label="on_pubrel call"];
-      C -> H [label="on_pubrel return"];
-           H -> S [diagonal, label = "Pubcomp"];
-
-      C [description="Client"];
-      H [description="haka-mqtt"];
-      S [description="MQTT Server"];
-   }
+    Client -> Haka: read call
+              Haka <- Socket: recv publish(QoS=2)
+    Client <- Haka: on_publish call
+    Client -> Haka: on_publish return
+    note right: enqueue pubrec
+    Client <- Haka: read return
+    == ... ==
+    Client -> Haka: write call
+              Haka -> Socket: send pubrec
+    note right: dequeue pubrec
+    Client <- Haka: write return
+    == ... ==
+    Client -> Haka: read call
+              Haka <- Socket: recv pubrel
+    Client <- Haka: on_pubrel call
+    Client -> Haka: on_pubrel return
+    note right: enqueue pubcomp
+    Client <- Haka: read return
+    == ... ==
+    Client -> Haka: write call
+              Haka -> Socket: send pubcomp
+    note right: dequeue pubcomp
+    Client <- Haka: write return

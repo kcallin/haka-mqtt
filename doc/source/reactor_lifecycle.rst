@@ -148,11 +148,11 @@ means before the ``terminate`` call has returned.
         "init" -> "starting" [label="start"];
         "starting" -> "started";
         "started" -> "stopping" [label="stop"];
+        "stopping" -> "stopped"  [label="terminate"];
 
         "init" -> "stopped" [label="terminate"];
         "starting" -> "stopped" [label="terminate"];
         "started" -> "stopped" [label="terminate"];
-        "stopping" -> "stopped"  [label="terminate"];
 
         "error" -> "error" [label="terminate"];
     }

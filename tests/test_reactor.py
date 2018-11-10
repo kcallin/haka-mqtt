@@ -35,7 +35,7 @@ from haka_mqtt.reactor import (
     KeepaliveTimeoutReactorError,
     ConnectReactorError, INACTIVE_STATES, SocketReactorError, AddressReactorError, DecodeReactorError,
     ProtocolReactorError, INACTIVE_SOCK_STATES, SocketState, MqttState)
-from haka_mqtt.scheduler import Scheduler
+from haka_mqtt.scheduler import DurationScheduler
 
 
 def buffer_packet(packet):
@@ -195,7 +195,7 @@ class TestReactor(unittest.TestCase):
         self.expected_sockaddr = self.af_inet_name_resolution()[4]
         self.client_id = 'client'
         self.keepalive_period = 10*60
-        self.scheduler = Scheduler()
+        self.scheduler = DurationScheduler()
 
         self.on_connect_fail = Mock()
         self.on_disconnect = Mock()

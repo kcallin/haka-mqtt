@@ -1,6 +1,6 @@
 import unittest
 
-from haka_mqtt.scheduler import Scheduler
+from haka_mqtt.scheduler import DurationScheduler
 
 
 class Target():
@@ -13,7 +13,7 @@ class Target():
 
 class TestScheduler(unittest.TestCase):
     def test_scheduler(self):
-        s = Scheduler()
+        s = DurationScheduler()
         self.assertIsNone(s.remaining())
         self.assertEqual(0, len(s))
 
@@ -56,7 +56,7 @@ class TestScheduler(unittest.TestCase):
         self.assertTrue(d1.expired())
 
     def test_scheduler_0(self):
-        s = Scheduler()
+        s = DurationScheduler()
         self.assertIsNone(s.remaining())
         self.assertEqual(0, len(s))
 

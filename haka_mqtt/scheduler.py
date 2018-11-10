@@ -57,7 +57,6 @@ class _DeadlineEntry(object):
 
 class Scheduler(object):
     def __init__(self):
-        self._instant = 0
         self._queue = []
 
     def instant(self):
@@ -67,7 +66,7 @@ class Scheduler(object):
         -------
         int
         """
-        return self._instant
+        raise NotImplementedError()
 
     def remaining(self):
         """Duration remaining to next scheduled callback.
@@ -102,6 +101,25 @@ class Scheduler(object):
         insort_right(self._queue, de)
         return Deadline(de)
 
+    def __len__(self):
+        return len(self._queue)
+
+
+class DurationScheduler(Scheduler):
+    def __init__(self):
+        Scheduler.__init__(self)
+        self._instant = 0
+        self._queue = []
+
+    def instant(self):
+        """Returns the current tick.
+
+        Returns
+        -------
+        int
+        """
+        return self._instant
+
     def poll(self, duration):
         """Adds `duration` to `self.instant()` and calls all scheduled
         callbacks.
@@ -116,9 +134,6 @@ class Scheduler(object):
             de = self._queue.pop(0)
             de.expired = True
             de.cb()
-
-    def __len__(self):
-        return len(self._queue)
 
 
 class ClockScheduler(Scheduler):

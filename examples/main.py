@@ -1,8 +1,8 @@
 from __future__ import print_function
-import argparse
 import logging
 import socket
 import sys
+from argparse import ArgumentParser, ArgumentTypeError
 
 from haka_mqtt.poll import MqttPollClientProperties, MqttPollClient
 from mqtt_codec.packet import MqttTopic
@@ -116,15 +116,15 @@ def argparse_endpoint(s):
     """
     words = s.split(':')
     if len(words) != 2:
-        raise argparse.ArgumentTypeError('Format of endpoint must be hostname:port.')
+        raise ArgumentTypeError('Format of endpoint must be hostname:port.')
     host, port = words
 
     try:
         port = int(port)
         if not 1 <= port <= 2**16-1:
-            raise argparse.ArgumentTypeError('Port must be in the range 1 <= port <= 65535.')
+            raise ArgumentTypeError('Port must be in the range 1 <= port <= 65535.')
     except ValueError:
-        raise argparse.ArgumentTypeError('Format of endpoint must be hostname:port.')
+        raise ArgumentTypeError('Format of endpoint must be hostname:port.')
 
     return host, port
 
@@ -134,9 +134,9 @@ def create_parser():
 
     Returns
     -------
-    argparse.ArgumentParser
+    ArgumentParser
     """
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("endpoint", type=argparse_endpoint)
 
     return parser

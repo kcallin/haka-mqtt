@@ -11,6 +11,7 @@ from enum import (
     unique,
 )
 
+from haka_mqtt.null_log import NullLogger
 from haka_mqtt.packet_ids import PacketIdGenerator
 from haka_mqtt.selector import Selector
 from mqtt_codec.io import (
@@ -190,10 +191,12 @@ class ReactorState(IntEnum):
     stopped = 4
     error = 5
 
+
 # States where there are no active deadlines, the socket is closed and there
 # is no active I/O.
 #
 INACTIVE_STATES = (ReactorState.init, ReactorState.stopped, ReactorState.error)
+
 
 # States with active deadlines, open sockets, or pending I/O.
 #
@@ -205,29 +208,6 @@ ACTIVE_STATES = (
 
 
 assert set(INACTIVE_STATES).union(ACTIVE_STATES) == set(iter(ReactorState))
-
-
-def get_packet_type(d, packet_id, packet_type):
-    """
-    Parameters
-    ----------
-    d: dict
-    packet_id: int
-    packet_type: MqttControlPacketType
-
-    Returns
-    -------
-    object or None
-        Mqtt packet with given packet id and type.
-    """
-    try:
-        maybe_packet = d[packet_id]
-    except KeyError:
-        packet = None
-    else:
-        packet = maybe_packet if maybe_packet.packet_type is packet_type else None
-
-    return packet
 
 
 class ReactorError(object):
@@ -414,7 +394,7 @@ class Reactor(object):
     Parameters
     ----------
     properties: ReactorProperties
-    log: str or logging.Logger
+    log: str or logging.Logger or None
         If `str` then calls logging.getLogger(log) to acquire a logger;
         otherwise asserts that `log` has `debug`, `info`, etc. methods
         and uses log as if it were a `logging.getLogger` object.
@@ -437,13 +417,16 @@ class Reactor(object):
         assert properties.selector is not None
         assert isinstance(properties.address_family, int)
 
-        if isinstance(log, (str, unicode)):
+        if log is None:
+            self.__log = NullLogger()
+        elif isinstance(log, (str, unicode)):
             self.__log = logging.getLogger(log)
         else:
             assert hasattr(log, 'debug')
             assert hasattr(log, 'info')
             assert hasattr(log, 'warning')
             assert hasattr(log, 'error')
+            assert hasattr(log, 'critical')
             self.__log = log
 
         self.__wbuf = bytearray()
@@ -701,6 +684,31 @@ class Reactor(object):
             self.__will = will
         else:
             raise TypeError()
+
+    def __get_packet_type(self, packet_id, packet_type):
+        """Performs a `packet_id` lookup in `self.__inflight_queue` and
+        returns a packet with type `packet_type`.  If the packet does
+        not have the expected `packet_type` then returns None
+
+        Parameters
+        ----------
+        packet_id: int
+        packet_type: MqttControlPacketType
+
+        Returns
+        -------
+        object or None
+            Mqtt packet with given packet id and type or `None` if the
+            packet with the given id exists but is the wrong type.
+        """
+        try:
+            maybe_packet = self.__inflight_queue[packet_id]
+        except KeyError:
+            packet = None
+        else:
+            packet = maybe_packet if maybe_packet.packet_type is packet_type else None
+
+        return packet
 
     def __update_io_notification(self):
         if self.socket is not None:
@@ -1360,7 +1368,7 @@ class Reactor(object):
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(suback)
         elif self.mqtt_state is MqttState.connected:
-            subscribe = get_packet_type(self.__inflight_queue, suback.packet_id, MqttControlPacketType.subscribe)
+            subscribe = self.__get_packet_type(suback.packet_id, MqttControlPacketType.subscribe)
 
             if subscribe is None:
                 self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',
@@ -1395,7 +1403,7 @@ class Reactor(object):
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(unsuback)
         elif self.mqtt_state is MqttState.connected:
-            unsubscribe = get_packet_type(self.__inflight_queue, unsuback.packet_id, MqttControlPacketType.unsubscribe)
+            unsubscribe = self.__get_packet_type(unsuback.packet_id, MqttControlPacketType.unsubscribe)
 
             if unsubscribe is None:
                 self.__abort_protocol_violation('Received %s for a mid that is not in-flight; aborting.',

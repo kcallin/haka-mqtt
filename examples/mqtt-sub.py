@@ -127,11 +127,11 @@ def main(args=sys.argv[1:]):
     ns = parser.parse_args(args)
 
     if ns.verbosity == 0:
-        logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s',
+        logging.basicConfig(format='%(asctime)-15s %(message)s',
                             level=logging.INFO,
                             stream=sys.stdout)
     elif ns.verbosity == 1:
-        logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s',
+        logging.basicConfig(format='%(asctime)-15s %(message)s',
                             level=logging.DEBUG,
                             stream=sys.stdout)
     else:

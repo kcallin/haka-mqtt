@@ -543,10 +543,6 @@ class Reactor(object):
         ----------
         reactor: Reactor
         pubcomp: MqttPubcomp
-
-        Returns
-        -------
-
         """
         pass
 

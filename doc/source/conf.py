@@ -47,7 +47,6 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'sphinx.ext.graphviz',
-    'sphinxcontrib.seqdiag',
     'sphinxcontrib.plantuml',
 ]
 

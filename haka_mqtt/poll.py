@@ -98,6 +98,8 @@ class MqttPollClientProperties(object):
         self.port = None
         self.client_id = None
         self.keepalive_period = 0
+        self.recv_idle_ping_period = 60
+        self.recv_idle_abort_period = 2 * self.recv_idle_ping_period
         self.ssl = True
         self.address_family = socket.AF_UNSPEC
 
@@ -126,6 +128,8 @@ class MqttPollClient(Reactor):
 
         p.endpoint = endpoint
         p.keepalive_period = properties.keepalive_period
+        p.recv_idle_ping_period = properties.recv_idle_ping_period
+        p.recv_idle_abort_period = properties.recv_idle_abort_period
         if properties.client_id is None:
             p.client_id = generate_client_id()
         else:

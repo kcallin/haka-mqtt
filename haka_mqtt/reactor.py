@@ -50,24 +50,35 @@ class ReactorProperties(object):
     Attributes
     ----------
     socket_factory: haka_mqtt.socket_factory.SocketFactory
+    name_resolver: callable
+        DNS resolver.
+    scheduler:
+        TODO
+    selector: Selector
     client_id: str
     endpoint: tuple
         2-tuple of (host: `str`, port: `int`).  The `port` value is
         constrainted such that 0 <= `port` <= 2**16-1.
     keepalive_period: int
-        0 <= keepalive_period <= 2*16-1; zero disables keepalive.  Time
-        is in seconds.
-    abort_period: int
-        0 < abort_period; aborts connection after this time without
-        receiving any bytes from remote (typically set to 1.5x
-        keepalive).
+        0 <= keepalive_period <= 2*16-1; zero disables keepalive.  Sends
+        a ``MqttPingreq`` packet to the server after this many seconds
+        without sending and data over the socket.  The server will
+        disconnect the client as if there has been a network error after
+        1.5x``self.keepalive`` seconds without receiving any bytes
+        [MQTT-3.1.2-24].
+    recv_idle_ping_period: int
+        0 < recv_idle_ping_period; sends a ``MqttPingreq`` packet to
+        the server after this many seconds without receiving and bytes
+        on the socket.
+    recv_idle_abort_period: int
+        0 < recv_idle_abort_period; aborts connection after this time
+        without receiving any bytes from remote (typically set to 1.5x
+        ``self.recv_idle_ping_period``).
     clean_session: bool
         With clean session set to True reactor will clear all message
         buffers on disconnect without regard to QoS; otherwise
         unacknowledged messages will be retransmitted after a
         re-connect.
-    name_resolver: callable
-        DNS resolver.
     address_family: int
         Address family; one of the socket.AF_* constants (eg.
         `socket.AF_UNSPEC` for any family, `socket.AF_INET` for IP4
@@ -75,20 +86,23 @@ class ReactorProperties(object):
         default.
     username: str optional
     password: str optional
-    selector: Selector
     """
     def __init__(self):
+        # Dependencies
         self.socket_factory = None
+        self.selector = Selector()
+        self.name_resolver = None
+        self.scheduler = None
+
+        # Parameters
         self.endpoint = None
         self.client_id = None
         self.keepalive_period = 10*60
-        self.abort_period = 15*60
-        self.scheduler = None
+        self.recv_idle_ping_period = 10 * 60
+        self.recv_idle_abort_period = 15 * 60
         self.clean_session = True
-        self.name_resolver = None
         self.username = None
         self.password = None
-        self.selector = Selector()
         self.address_family = socket.AF_UNSPEC
 
 
@@ -406,8 +420,10 @@ class Reactor(object):
         assert properties.scheduler is not None
         assert 0 <= properties.keepalive_period <= 2**16-1
         assert isinstance(properties.keepalive_period, int)
-        assert 0 < properties.abort_period
-        assert isinstance(properties.abort_period, int)
+        assert 0 < properties.recv_idle_abort_period
+        assert isinstance(properties.recv_idle_abort_period, int)
+        assert 0 < properties.recv_idle_ping_period
+        assert isinstance(properties.recv_idle_ping_period, int)
         assert isinstance(properties.clean_session, bool)
         assert callable(properties.name_resolver)
         host, port = properties.endpoint
@@ -442,8 +458,10 @@ class Reactor(object):
 
         self.__keepalive_period = properties.keepalive_period
         self.__keepalive_due_deadline = None
-        self.__abort_period = properties.abort_period
-        self.__abort_deadline = None
+        self.__recv_idle_abort_period = properties.recv_idle_abort_period
+        self.__recv_idle_abort_deadline = None
+        self.__recv_idle_ping_period = properties.recv_idle_ping_period
+        self.__recv_idle_ping_deadline = None
         self.__clean_session = properties.clean_session
         self.__name_resolver = properties.name_resolver
 
@@ -623,7 +641,7 @@ class Reactor(object):
         return self.__keepalive_period
 
     @property
-    def abort_period(self):
+    def recv_idle_abort_period(self):
         """int: Connection will be closed if bytes have not been
         received from remote in this many seconds.  Typically this is
         1.5x the self.keepalive_period."""
@@ -638,7 +656,14 @@ class Reactor(object):
         a half times the Keep Alive time period, it MUST disconnect the
         Network Connection to the Client as if the network had failed.
         [MQTT-3.1.2-24]"""
-        return self.__abort_period
+        return self.__recv_idle_abort_period
+
+    @property
+    def recv_idle_ping_period(self):
+        """int: 0 < ``self.recv_idle_ping_period``; sends a
+        ``MqttPingreq`` packet to the server after this many seconds
+        without receiving and bytes on the socket."""
+        return self.__recv_idle_ping_period
 
     @property
     def error(self):
@@ -734,9 +759,9 @@ class Reactor(object):
             assert self.__pingreq_active is False
 
         if self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute, SocketState.deaf):
-            assert self.__abort_deadline is not None
+            assert self.__recv_idle_abort_deadline is not None
         elif self.sock_state in (SocketState.name_resolution, SocketState.connecting, SocketState.stopped):
-            assert self.__abort_deadline is None
+            assert self.__recv_idle_abort_deadline is None
         else:
             raise NotImplementedError(self.sock_state)
 
@@ -1144,16 +1169,16 @@ class Reactor(object):
         assert len(new_bytes) > 0
 
         if self.sock_state is not SocketState.mute:
-            if self.__keepalive_due_deadline is not None:
-                self.__keepalive_due_deadline.cancel()
-                self.__keepalive_due_deadline = None
+            if self.__recv_idle_ping_deadline is not None:
+                self.__recv_idle_ping_deadline.cancel()
+                self.__recv_idle_ping_deadline = None
 
             if self.keepalive_period:
-                self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
+                self.__recv_idle_ping_deadline = self.__scheduler.add(self.recv_idle_ping_period, self.__recv_idle_ping_timeout)
 
-        self.__abort_deadline.cancel()
-        self.__abort_deadline = self.__scheduler.add(self.__abort_period,
-                                                     self.__abort_timeout)
+        self.__recv_idle_abort_deadline.cancel()
+        self.__recv_idle_abort_deadline = self.__scheduler.add(self.__recv_idle_abort_period,
+                                                               self.__recv_idle_abort_timeout)
 
         self.__log.debug('recv %d bytes 0x%s', len(new_bytes), HexOnStr(new_bytes))
         self.__rbuf.extend(new_bytes)
@@ -1578,11 +1603,12 @@ class Reactor(object):
         ----------
         pingresp: MqttPingresp
         """
-
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pingresp)
         elif self.mqtt_state is MqttState.connected:
             if self.__pingreq_active:
+                assert self.keepalive_period
+
                 self.__log.info('Received %s.', repr(pingresp))
                 self.__pingreq_active = False
             else:
@@ -1711,7 +1737,11 @@ class Reactor(object):
                     self.__keepalive_due_deadline.cancel()
                     self.__keepalive_due_deadline = None
 
-                assert self.__abort_deadline is not None
+                if self.__recv_idle_ping_deadline is not None:
+                    self.__recv_idle_ping_deadline.cancel()
+                    self.__recv_idle_ping_deadline = None
+
+                assert self.__recv_idle_abort_deadline is not None
 
         if num_bytes_flushed:
             self.__log.debug('send %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))
@@ -1792,11 +1822,11 @@ class Reactor(object):
         the `ReactorState.connecting` state."""
         assert self.sock_state is SocketState.connecting
         assert self.state is ReactorState.starting
-        assert self.__abort_deadline is None
+        assert self.__recv_idle_abort_deadline is None
 
         self.__log.info('Connected.')
-        self.__abort_deadline = self.__scheduler.add(self.abort_period,
-                                                     self.__abort_timeout)
+        self.__recv_idle_abort_deadline = self.__scheduler.add(self.recv_idle_abort_period,
+                                                               self.__recv_idle_abort_timeout)
 
         if hasattr(self.socket, 'do_handshake'):
             self.__set_handshake()
@@ -1837,6 +1867,15 @@ class Reactor(object):
                     self.__abort(SocketReactorError(e.errno))
                 else:
                     self.__abort_socket_error(SocketReactorError(e.errno))
+
+        if num_bytes_written > 0:
+            if self.sock_state in (SocketState.connected, SocketState.deaf):
+                if self.__keepalive_due_deadline is not None:
+                    self.__keepalive_due_deadline.cancel()
+                    self.__keepalive_due_deadline = None
+
+                if self.keepalive_period:
+                    self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
         return num_bytes_written
 
@@ -1912,9 +1951,13 @@ class Reactor(object):
         self.__wbuf = bytearray()
         self.__rbuf = bytearray()
 
-        if self.__abort_deadline is not None:
-            self.__abort_deadline.cancel()
-            self.__abort_deadline = None
+        if self.__recv_idle_abort_deadline is not None:
+            self.__recv_idle_abort_deadline.cancel()
+            self.__recv_idle_abort_deadline = None
+
+        if self.__recv_idle_ping_deadline is not None:
+            self.__recv_idle_ping_deadline.cancel()
+            self.__recv_idle_ping_deadline = None
 
         if self.__keepalive_due_deadline is not None:
             self.__keepalive_due_deadline.cancel()
@@ -1959,35 +2002,54 @@ class Reactor(object):
         self.__terminate(ReactorState.error, e)
 
     def __keepalive_due_timeout(self):
+        """See [MQTT-3.1.2-23]"""
         self.__assert_state_rules()
         assert self.__keepalive_due_deadline is not None
 
         assert self.sock_state is SocketState.connected
-        assert self.mqtt_state is MqttState.connected
-        assert self.__pingreq_active is False
 
-        self.__pingreq_active = True
-        self.__preflight_queue.append(MqttPingreq())
+        if not self.__pingreq_active:
+            self.__pingreq_active = True
+            self.__preflight_queue.append(MqttPingreq())
 
         self.__keepalive_due_deadline.cancel()
         self.__keepalive_due_deadline = None
 
-        self.__assert_state_rules()
         self.__update_io_notification()
+        self.__assert_state_rules()
 
-    def __abort_timeout(self):
+    def __recv_idle_ping_timeout(self):
+        """See [MQTT-3.1.2-23]"""
+        self.__assert_state_rules()
+        assert self.__recv_idle_ping_deadline is not None
+
+        assert self.sock_state is SocketState.connected
+
+        if not self.__pingreq_active:
+            self.__pingreq_active = True
+            self.__preflight_queue.append(MqttPingreq())
+
+        self.__recv_idle_ping_deadline.cancel()
+        self.__recv_idle_ping_deadline = None
+
+        self.__update_io_notification()
+        self.__assert_state_rules()
+
+    def __recv_idle_abort_timeout(self):
+        """Called when bytes have not been received from the server for
+        at least ``self.abort_period`` seconds."""
         self.__assert_state_rules()
 
         assert self.__keepalive_due_deadline is None
-        assert self.__abort_deadline is not None
+        assert self.__recv_idle_abort_deadline is not None
 
         if self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute, SocketState.deaf):
             msg = "More than abort period (%.01fs) has passed since last bytes received.  Aborting."
-            self.__log.warning(msg, self.abort_period)
+            self.__log.warning(msg, self.recv_idle_abort_period)
         else:
             raise NotImplementedError(self.sock_state)
 
-        self.__abort_deadline = None
+        self.__recv_idle_abort_deadline = None
 
         self.__abort(KeepaliveTimeoutReactorError())
 

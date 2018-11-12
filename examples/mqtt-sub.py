@@ -19,12 +19,13 @@ class MqttSubClient(MqttPollClient):
     """
     def __init__(self, endpoint, topics, clientid=None, keepalive_period=0):
         properties = MqttPollClientProperties()
-        properties.keepalive_period = 10
         properties.ssl = True
         properties.client_id = clientid
         properties.host, properties.port = endpoint
         properties.address_family = socket.AF_UNSPEC
         properties.keepalive_period = keepalive_period
+        properties.recv_idle_ping_period = keepalive_period
+        properties.recv_idle_abort_period = int(1.5 * keepalive_period)
 
         MqttPollClient.__init__(self, properties)
 

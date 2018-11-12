@@ -1,4 +1,5 @@
 import sys
+from glob import glob
 from os.path import join, dirname
 from setuptools import setup, find_packages
 
@@ -57,6 +58,7 @@ setup(
     packages=find_packages(),
     author="Keegan Callin",
     author_email="kc@kcallin.net",
+    scripts=glob("scripts/*.py"),
 #    license="PSF",
 #    keywords="hello world example examples",
 #    could also include long_description, download_url, classifiers, etc.

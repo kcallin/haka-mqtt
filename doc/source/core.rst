@@ -16,3 +16,4 @@ rule processing is required for the given application.
    send_path
    receive_path
    subscribe_path
+   keepalive_path

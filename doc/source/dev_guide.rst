@@ -48,6 +48,32 @@ Building Documentation
     $
 
 
+Tests
+======
+
+The `haka-mqtt` library comes with an extensive battery of tests.  The
+tests are built to be as deterministic as possible - to the point that
+the loggers are not connected to the system clock so that the time of a
+given log message in the tests will be identical from one test run to
+the next.
+
+The built-in automated tests can be run from the command-line in the
+conventional python manner:
+
+.. code-block:: none
+
+    $ python setup.py test
+    $
+
+What is less conventional is that logging to standard output can be
+enabled by setting the `LOGGING` environment variable.
+
+.. code-block:: none
+
+    $ LOGGING=true python setup.py test
+    $
+
+
 Docstrings
 ===========
 

@@ -1,17 +1,17 @@
 class NullLogger(object):
-    def debug(msg, *args, **kwargs):
+    def debug(self, msg, *args, **kwargs):
         pass
 
-    def info(msg, *args, **kwargs):
+    def info(self, msg, *args, **kwargs):
         pass
 
-    def warning(msg, *args, **kwargs):
+    def warning(self, msg, *args, **kwargs):
         pass
 
-    def error(msg, *args, **kwargs):
+    def error(self, msg, *args, **kwargs):
         pass
 
-    def critical(msg, *args, **kwargs):
+    def critical(self, msg, *args, **kwargs):
         pass
 
     def log(self, lvl, msg, *args, **kwargs):

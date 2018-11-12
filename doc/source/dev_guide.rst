@@ -43,7 +43,7 @@ Building Documentation
 
 .. code-block:: none
 
-    $ pip install sphinxcontrib-seqdiag
+    $ pip install sphinxcontrib-plantuml enum34 mqtt-codec
     $ make html
     $
 
@@ -80,6 +80,7 @@ Docstrings
 Python source code is documented according to the the numpy
 documentation standard at
 https://numpydoc.readthedocs.io/en/latest/format.html.
+
 
 Requirements
 =============

@@ -54,6 +54,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.6',
     ],
+    use_2to3=True,
     test_suite="tests",
     packages=find_packages(),
     author="Keegan Callin",

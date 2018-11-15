@@ -1,30 +1,67 @@
 import unittest
 
-from haka_mqtt.reactor import ReactorState, MqttState, ProtocolReactorError, SocketState, KeepaliveTimeoutReactorError
-from mqtt_codec.packet import MqttPingresp, MqttPingreq, MqttDisconnect, MqttTopic, MqttPublish
+from haka_mqtt.reactor import ReactorState, MqttState, ProtocolReactorError, SocketState, RecvTimeoutReactorError
+from mqtt_codec.packet import MqttPingresp, MqttPingreq, MqttDisconnect, MqttTopic, MqttPublish, MqttConnack, \
+    ConnackResult
 from tests.reactor_harness import TestReactor
 
 
+"""
+rule:
+Only one MqttPingreq may be in preflight at any given time.
+
+
+send path:
+
+await_connack and keepalive is due.
+
+Another keepalive comes due.
+Another keepalive comes due.
+
+deaf when keepalive comes due?
+
+
+recv ping path:
+
+await connack, ping due (do not send)
+deaf and keepalive comes due. (do not send)
+mute and keepalive comes due. (do not send)
+"""
+
+
 class TestKeepalive(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        self.keepalive_period = 7  # Set keepalive period so that it dominates.
+        self.recv_idle_ping_period = 8
+        self.recv_idle_abort_period = 17
+        return TestReactor.reactor_properties(self)
+
     def test_connack(self):
         # Start with async connect
         self.start_to_connack()
 
+        min_time_step = 0.001
         # Verify waiting for connack and no writes are needed
         self.assertEqual(ReactorState.starting, self.reactor.state)
         self.assertEqual(MqttState.connack, self.reactor.mqtt_state)
         self.assertFalse(self.reactor.want_write())
 
-        # Before a connack is received no pingreq should be sent.
-        self.scheduler.poll(self.reactor.keepalive_period - 1)
+        # Before a connack is received no pingreq should be sent.  Any
+        # keepalive should be deferred until after the connack is
+        # received.
+        self.scheduler.poll(self.reactor.keepalive_period)
         self.assertFalse(self.reactor.want_write())
-        self.scheduler.poll(1)
+
+        # Receive connack and then launch deferred pingreq.
+        self.recv_packet_then_ewouldblock(MqttConnack(False, ConnackResult.accepted))
         self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        # Next keepalive is set.
+        self.assertEqual(self.keepalive_period, self.scheduler.remaining())
 
         # A pingresp is an error at this point.
-        self.recv_packet_then_ewouldblock(MqttPingresp())
-        self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, ProtocolReactorError))
+        self.reactor.terminate()
 
     def test_connected(self):
         self.start_to_connected()
@@ -44,6 +81,35 @@ class TestKeepalive(TestReactor, unittest.TestCase):
         # were not processed accurately.
         self.scheduler.poll(self.reactor.keepalive_period)
         self.assertEqual(ReactorState.started, self.reactor.state)
+
+        self.reactor.terminate()
+
+    def test_connected_keepalive_with_recv_qos0(self):
+        self.start_to_connected()
+
+        # Time passes; receives QoS=0
+        # This resets the recv_idle_*_period timers but does not reset
+        # the keepalive timer.
+        time_until_publish = self.keepalive_period//2 + 1
+        self.poll(time_until_publish)
+        pub0 = MqttPublish(18511, u'/test/MT2007/konyha', '', dupe=False, qos=0, retain=False)
+        self.recv_packet_then_ewouldblock(pub0)
+
+        # Expire the keepalive timer; verify pingreq is sent.
+        time_until_keepalive = self.keepalive_period - time_until_publish
+        self.assertEqual(time_until_keepalive, self.scheduler.remaining())
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(time_until_keepalive)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+        self.assertFalse(self.reactor.want_write())
+
+        # Verify that read-path does not generate a new ping while one
+        # is already active.
+        time_until_recv_idle_ping = time_until_publish + self.recv_idle_ping_period - self.keepalive_period
+        self.assertEqual(time_until_recv_idle_ping, self.scheduler.remaining())
+        self.scheduler.poll(time_until_recv_idle_ping)
+        self.assertFalse(self.reactor.want_write())
 
         self.reactor.terminate()
 
@@ -90,137 +156,132 @@ class TestKeepalive(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.stopped, self.reactor.state, self.reactor.error)
 
 
-class TestKeepaliveX(TestReactor, unittest.TestCase):
+class TestKeepaliveDisabled(TestReactor, unittest.TestCase):
     def reactor_properties(self):
-        rp = super(type(self), self).reactor_properties()
-        kp = 30
-        rp.keepalive_period = kp
-        rp.recv_idle_ping_period = kp
-        rp.recv_idle_abort_period = int(1.5*kp)
+        # Set recv_idle_*_period to huge numbers so that keepalive would
+        # probably show up if it wasn't disabled.
+        self.recv_idle_ping_period = 1000000000
+        self.recv_idle_abort_period = 1000000001
+        self.keepalive_period = 0
+        return TestReactor.reactor_properties(self)
 
-        self.keepalive_period = rp.keepalive_period
-        self.recv_idle_ping_period = rp.recv_idle_ping_period
-        self.recv_idle_abort_period = rp.recv_idle_abort_period
-        return rp
+    def test_connack(self):
+        # Start with async connect
+        self.assertEqual(0, self.reactor.keepalive_period)
+        self.start_to_connack()
 
-    def test_1(self):
-        """
-/home/kcallin/src/haka-mqtt/venv/bin/python /home/kcallin/src/haka-mqtt/examples/mqtt-sub.py --keepalive=30 --topic0=Advantech/# --topic0=/test/# --topic0=/temp/# test.mosquitto.org 8883
-2018-11-12 08:35:00,333 Starting.
-2018-11-12 08:35:00,333 Looking up host test.mosquitto.org:8883.
-2018-11-12 08:35:00,426 Found family=inet sock=sock_stream proto=tcp addr=37.187.106.16:8883 (chosen)
-2018-11-12 08:35:00,426 Found family=inet6 sock=sock_stream proto=tcp addr=2001:41d0:a:3a10::1:8883
-2018-11-12 08:35:00,428 Connecting.
-2018-11-12 08:35:00,563 Connected.
-2018-11-12 08:35:00,853 Launching message MqttConnect(client_id='client-2018-11-12T08:35:00-grizzly-15509', clean_session=True, keep_alive=30s, username=***, password=***, will=None).
-2018-11-12 08:35:00,990 Received MqttConnack(session_present=False, return_code=<ConnackResult.accepted: 0>).
-2018-11-12 08:35:00,990 Launching message MqttSubscribe(packet_id=0, topics=[Topic('Advantech/#', max_qos=0), Topic('/test/#', max_qos=0), Topic('/temp/#', max_qos=0)]).
-2018-11-12 08:35:01,127 Received MqttSuback(packet_id=0, results=[<SubscribeResult.qos0: 0>, <SubscribeResult.qos0: 0>, <SubscribeResult.qos0: 0>]).
-2018-11-12 08:35:01,302 Received MqttPublish(packet_id=31522, topic=u'Advantech/00D0C9FAC3EA/data', payload=0x73223a312c2274223a302c2271223a3139322c2263223a312c22646931223a747275652c22646932223a66616c73652c22646933223a66616c73652c22646934223a66616c73652c22646f31223a66616c73652c22646f32223a66616c73652c22646f33223a66616c73652c22646f34223a66616c73657d, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,302 Received MqttPublish(packet_id=31522, topic=u'Advantech/00D0C9FAC3EA/Device_Status', payload=0x737461747573223a22636f6e6e656374222c226e616d65223a224144414d36323636222c226d61636964223a22303044304339464143334541222c22697061646472223a2231302e312e312e3133227d, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,303 Received MqttPublish(packet_id=17513, topic=u'Advantech/Device_Status', payload=0x73636f6e6e656374696f6e5f4144414d363236365f303044304339464541304533, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,303 Received MqttPublish(packet_id=31522, topic=u'Advantech/00D0C9F8CE88/Device_Status', payload=0x737461747573223a22636f6e6e656374222c226e616d65223a22574953452d343031302f4c414e222c226d61636964223a22303044304339463843453838222c22697061646472223a223139322e3136382e302e313331227d, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,303 Received MqttPublish(packet_id=12336, topic=u'/test/tfl/bddjpv', payload=0x30303030, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,303 Received MqttPublish(packet_id=29797, topic=u'/test/publish', payload=0x73742031, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,304 Received MqttPublish(packet_id=31522, topic=u'/test/iot/srdat', payload=0x747a6f6e65223a20302c202273756e72697365223a2022373a3133222c202273756e736574223a2022343a3135222c202274656d70223a2031322c202268696768223a2031332c20226c6f77223a2031307d, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:01,304 Received MqttPublish(packet_id=12851, topic=u'/temp/random', payload=0x, dupe=False, qos=0, retain=True).
-2018-11-12 08:35:02,233 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234362d50413a343138, dupe=False, qos=0, retain=False).
-2018-11-12 08:35:12,274 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234342d50413a343137, dupe=False, qos=0, retain=False).
-2018-11-12 08:35:22,308 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234362d50413a343138, dupe=False, qos=0, retain=False).
-2018-11-12 08:35:30,991 Launching message MqttPingreq().
-2018-11-12 08:35:31,128 Received MqttPingresp().
-2018-11-12 08:35:32,223 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234372d50413a343139, dupe=False, qos=0, retain=False).
-2018-11-12 08:35:42,253 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234372d50413a343139, dupe=False, qos=0, retain=False).
-2018-11-12 08:35:52,340 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234372d50413a343139, dupe=False, qos=0, retain=False).
-2018-11-12 08:36:02,234 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234362d50413a343138, dupe=False, qos=0, retain=False).
-2018-11-12 08:36:12,241 Received MqttPublish(packet_id=18511, topic=u'/test/MT2007/konyha', payload=0x3a3234342d50413a343137, dupe=False, qos=0, retain=False).
-2018-11-12 08:36:16,346 Remote has unexpectedly closed remote->local writes; Aborting.
-"""
+        self.assertEqual(self.recv_idle_abort_period, self.scheduler.remaining())
+        self.assertEqual(ReactorState.starting, self.reactor.state)
+        self.assertEqual(MqttState.connack, self.reactor.mqtt_state)
+        self.assertFalse(self.reactor.want_write())
+
+        # Before a connack is received no pingreq should be sent.
+        self.scheduler.poll(self.reactor.recv_idle_abort_period)
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError), self.reactor.error)
+        self.socket.send.assert_not_called()
+
+    def test_connected(self):
         self.start_to_connected()
-        topics = [MqttTopic('Advantech/#', max_qos=0), MqttTopic('/test/#', max_qos=0), MqttTopic('/temp/#', max_qos=0)]
-        self.subscribe_and_suback(topics)
 
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-        time_of_next_recv_ping = self.clock.time() + self.recv_idle_ping_period
-        self.poll(15)
-        self.recv_packet_then_ewouldblock(MqttPublish(18511, u'/test/MT2007/konyha', '', dupe=False, qos=0, retain=False))
-        time_of_next_recv_ping = self.clock.time() + self.recv_idle_ping_period
-        self.poll(time_of_next_send_ping - self.clock.time() - 1)
-        self.assertFalse(self.reactor.want_write())
-
-        # First ping (send path)
-        self.poll(1)
-        self.assertTrue(self.reactor.want_write())
-        self.send_packet(MqttPingreq())
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-        self.poll(15)
-        self.recv_packet_then_ewouldblock(MqttPingresp())
-        time_of_next_recv_ping = self.clock.time() + self.recv_idle_ping_period
-        self.poll(time_of_next_send_ping - self.clock.time() - 1)
-        self.assertFalse(self.reactor.want_write())
-
-        # Second ping (send path)
-        self.poll(1)
-        self.assertTrue(self.reactor.want_write())
-        self.send_packet(MqttPingreq())
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-        self.poll(5)
-        self.recv_packet_then_ewouldblock(MqttPingresp())
-        time_of_next_recv_ping = self.clock.time() + self.recv_idle_ping_period
-        self.poll(time_of_next_send_ping - self.clock.time() - 1)
-        self.assertFalse(self.reactor.want_write())
-
-        # Third ping (send path)
-        self.poll(1)
-        self.assertTrue(self.reactor.want_write())
-        self.send_packet(MqttPingreq())
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-        self.poll(5)
-        self.recv_packet_then_ewouldblock(MqttPingresp())
-        time_of_next_recv_ping = self.clock.time() + self.recv_idle_ping_period
-        self.poll(time_of_next_send_ping - self.clock.time() - 1)
-        self.assertFalse(self.reactor.want_write())
-
-        pub = MqttPublish(1, 'topic', 'payload', False, 0, False)
-        self.reactor.publish(pub.topic, pub.payload, pub.qos, pub.retain)
-        self.assertTrue(self.reactor.want_write())
-        self.send_packet(pub)
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-        self.poll(time_of_next_recv_ping - self.clock.time() - 1)
-        self.assertFalse(self.reactor.want_write())
-
-        # Fourth ping (recv path)
-        self.poll(1)
-        self.assertTrue(self.reactor.want_write())
-        self.send_packet(MqttPingreq())
-        time_of_next_send_ping = self.clock.time() + self.keepalive_period
-
-        self.reactor.terminate()
+        self.assertEqual(self.reactor.recv_idle_ping_period, self.scheduler.remaining())
+        # Both recv_idle_ping_period and recv_abort_ping_period elapse.
+        self.scheduler.poll(self.reactor.recv_idle_abort_period)
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError), self.reactor.error)
+        self.socket.send.assert_not_called()
 
 
-class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
+class TestRecvIdleTimeout(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        self.recv_idle_ping_period = 10
+        self.recv_idle_abort_period = 17
+        self.keepalive_period = 0  # Disable send path keepalive
+        return TestReactor.reactor_properties(self)
+
     def test_handshake(self):
         # Start with async connect
         self.start_to_handshake()
 
+        self.assertEqual(self.recv_idle_abort_period, self.scheduler.remaining())
         self.scheduler.poll(self.reactor.recv_idle_abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
 
     def test_connack(self):
         # Start with async connect
         self.start_to_connack()
 
+        self.assertEqual(self.recv_idle_abort_period, self.scheduler.remaining())
         self.scheduler.poll(self.reactor.recv_idle_abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
 
     def test_connected(self):
         self.start_to_connected()
 
         self.scheduler.poll(self.reactor.recv_idle_abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
+
+    def test_started_pingreq(self):
+        self.start_to_connected()
+
+        min_time_step = 0.00001
+
+        # Test pingreq after connack
+        self.assertEqual(self.reactor.recv_idle_ping_period, self.scheduler.remaining())
+        self.scheduler.poll(self.reactor.recv_idle_ping_period - min_time_step)
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(min_time_step)
+        self.assertTrue(self.reactor.want_write())
+
+        self.send_packet(MqttPingreq())
+        self.assertFalse(self.reactor.want_write())
+
+        # No incoming packets; idle abort timeout reached.
+        time_until_abort = self.reactor.recv_idle_abort_period - self.reactor.recv_idle_ping_period
+        self.scheduler.poll(time_until_abort - min_time_step)
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(min_time_step)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
+
+    def test_started_pingreq_pingresp_pingreq_abort(self):
+        self.start_to_connected()
+
+        min_time_step = 0.00001
+
+        # Test pingreq after connack
+        self.assertEqual(self.reactor.recv_idle_ping_period, self.scheduler.remaining())
+        self.scheduler.poll(self.reactor.recv_idle_ping_period - min_time_step)
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(min_time_step)
+        self.assertTrue(self.reactor.want_write())
+
+        self.send_packet(MqttPingreq())
+        self.assertFalse(self.reactor.want_write())
+
+        # A pingresp arrives just before the abort timeout.
+        time_until_abort = self.reactor.recv_idle_abort_period - self.reactor.recv_idle_ping_period
+        self.scheduler.poll(time_until_abort - min_time_step)
+        self.assertFalse(self.reactor.want_write())
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(self.recv_idle_ping_period, self.scheduler.remaining())
+
+        # Time passes without receiving any packets; pingreq sent out.
+        self.assertEqual(self.reactor.recv_idle_ping_period, self.scheduler.remaining())
+        self.scheduler.poll(self.reactor.recv_idle_ping_period - min_time_step)
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(min_time_step)
+        self.assertTrue(self.reactor.want_write())
+
+        self.send_packet(MqttPingreq())
+        self.assertFalse(self.reactor.want_write())
+
+        # No pingresp is received and abort timeout results.
+        self.assertAlmostEqual(time_until_abort, self.scheduler.remaining(), delta=min_time_step)
+        self.scheduler.poll(time_until_abort)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
 
     def test_mute(self):
         self.start_to_connected()
@@ -234,33 +295,4 @@ class TestKeepaliveTimeout(TestReactor, unittest.TestCase):
 
         self.scheduler.poll(self.reactor.recv_idle_abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError))
-
-
-class TestKeepaliveDisabled(TestReactor, unittest.TestCase):
-    def reactor_properties(self):
-        self.keepalive_period = 0
-        return TestReactor.reactor_properties(self)
-
-    def test_connack(self):
-        # Start with async connect
-        self.assertEqual(0, self.reactor.keepalive_period)
-        self.start_to_connack()
-
-        self.assertEqual(1, len(self.scheduler))
-        self.assertEqual(ReactorState.starting, self.reactor.state)
-        self.assertEqual(MqttState.connack, self.reactor.mqtt_state)
-        self.assertFalse(self.reactor.want_write())
-
-        # Before a connack is received no pingreq should be sent.
-        self.scheduler.poll(self.reactor.recv_idle_abort_period)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError), self.reactor.error)
-        self.socket.send.assert_not_called()
-
-    def test_connected(self):
-        self.start_to_connected()
-
-        self.assertEqual(1, len(self.scheduler))
-        self.scheduler.poll(self.reactor.recv_idle_abort_period)
-        self.assertTrue(isinstance(self.reactor.error, KeepaliveTimeoutReactorError), self.reactor.error)
-        self.socket.send.assert_not_called()
+        self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))

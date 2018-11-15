@@ -227,9 +227,6 @@ class TestPacketsBeforeConnack(TestReactor, unittest.TestCase):
     def test_pingresp(self):
         self.recv_packet_then_ewouldblock(MqttPingresp())
 
-    def test_pingreq(self):
-        self.recv_packet_then_ewouldblock(MqttPingreq())
-
     def test_pubrel(self):
         self.recv_packet_then_ewouldblock(MqttPubrel(0))
 
@@ -268,9 +265,6 @@ class TestPacketsBeforeConnackWhileMute(TestReactor, unittest.TestCase):
 
     def test_pingresp(self):
         self.recv_packet_then_ewouldblock(MqttPingresp())
-
-    def test_pingreq(self):
-        self.recv_packet_then_ewouldblock(MqttPingreq())
 
     def test_pubrel(self):
         self.recv_packet_then_ewouldblock(MqttPubrel(0))

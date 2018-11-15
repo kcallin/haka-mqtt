@@ -262,10 +262,10 @@ class ConnectReactorError(ReactorError):
         return '{}({})'.format(self.__class__.__name__, self.result)
 
 
-class KeepaliveTimeoutReactorError(ReactorError):
+class RecvTimeoutReactorError(ReactorError):
     """Server fails to respond in a timely fashion."""
     def __eq__(self, other):
-        return isinstance(other, KeepaliveTimeoutReactorError)
+        return isinstance(other, RecvTimeoutReactorError)
 
     def __repr__(self):
         return '{}()'.format(self.__class__.__name__)
@@ -477,7 +477,6 @@ class Reactor(object):
             0
         )
 
-        self.__recveived_connack = False
         self.__state = ReactorState.init
         self.__mqtt_state = MqttState.stopped
         self.__sock_state = SocketState.stopped
@@ -768,14 +767,23 @@ class Reactor(object):
         if self.sock_state not in (SocketState.connected, SocketState.deaf):
             assert self.__keepalive_due_deadline is None
 
+        if self.keepalive_period == 0:
+            assert self.__keepalive_due_deadline is None
+
+        if self.sock_state is not SocketState.connected:
+            # if sock_state is SocketState.deaf,
+            #   how can socket receive a ping reply?
+            # if sock_state is SocketState.mute
+            #   how can a ping be sent?
+            # else other states:
+            #   socket isn't connected so cannot send ping.
+            assert self.__recv_idle_ping_deadline is None
+
         if self.sock_state in INACTIVE_SOCK_STATES:
             self.__selector.assert_closed()
 
         if self.state is ReactorState.error:
             assert self.error is not None
-
-        if self.keepalive_period == 0:
-            assert self.__keepalive_due_deadline is None
 
     def send_packet_ids(self):
         """
@@ -893,7 +901,6 @@ class Reactor(object):
         self.__ssl_want_read = False
 
         self.__pingreq_active = False
-        self.__recveived_connack = False
 
         self.__name_resolution_future = None
 
@@ -1173,8 +1180,7 @@ class Reactor(object):
                 self.__recv_idle_ping_deadline.cancel()
                 self.__recv_idle_ping_deadline = None
 
-            if self.keepalive_period:
-                self.__recv_idle_ping_deadline = self.__scheduler.add(self.recv_idle_ping_period, self.__recv_idle_ping_timeout)
+            self.__recv_idle_ping_deadline = self.__scheduler.add(self.recv_idle_ping_period, self.__recv_idle_ping_timeout)
 
         self.__recv_idle_abort_deadline.cancel()
         self.__recv_idle_abort_deadline = self.__scheduler.add(self.__recv_idle_abort_period,
@@ -1199,8 +1205,6 @@ class Reactor(object):
                     self.__on_publish(self.__decode_packet_body(header, num_header_bytes, MqttPublish))
                 elif header.packet_type == MqttControlPacketType.pingresp:
                     self.__on_pingresp(self.__decode_packet_body(header, num_header_bytes, MqttPingresp))
-                elif header.packet_type == MqttControlPacketType.pingreq:
-                    self.__on_pingreq(self.__decode_packet_body(header, num_header_bytes, MqttPingreq))
                 elif header.packet_type == MqttControlPacketType.pubrel:
                     self.__on_pubrel(self.__decode_packet_body(header, num_header_bytes, MqttPubrel))
                 elif header.packet_type == MqttControlPacketType.pubcomp:
@@ -1262,8 +1266,11 @@ class Reactor(object):
             except ssl.SSLWantReadError:
                 self.__ssl_want_read = True
             except ssl.SSLError as e:
-                # TODO: Really?  The error string needs to be used to
-                # figure out that the read operation has timed out?
+                # TODO:
+                #
+                # In blocking socket mode can't find a way to detect
+                # a timeout other than a string comparison.  SUPER
+                # brittle.  Don't like at all!
                 # to = ssl.SSLError('The read operation timed out')
                 if e.message == 'The read operation timed out':
                     self.__ssl_want_read = True
@@ -1287,10 +1294,17 @@ class Reactor(object):
         assert self.mqtt_state is MqttState.connack, self.mqtt_state
 
         if connack.session_present and self.clean_session:
-            self.__abort_protocol_violation('Server indicates a session is present when none was requested. [MQTT-3.2.2-1]')
+            self.__abort_protocol_violation('Server indicates a session is present when none was requested'
+                                            ' [MQTT-3.2.2-1].')
         else:
             if self.state is ReactorState.starting:
                 self.__state = ReactorState.started
+                if self.keepalive_period and self.__keepalive_due_deadline is None:
+                    # The keepalive period timed out while waiting for
+                    # connack.  Pingreq requests are not launched while
+                    # waiting for connack; it has been deferred.
+                    # Launch the defferred pingreq now.
+                    assert self.__launch_pingreq_if_inactive()
             elif self.state is ReactorState.stopping:
                 pass
             else:
@@ -1309,7 +1323,6 @@ class Reactor(object):
         connack: MqttConnack
         """
         if self.mqtt_state is MqttState.connack:
-            self.__recveived_connack = True
             self.__log.info('Received %s.', repr(connack))
 
             # TODO: should not close incoming socket at this time;
@@ -1574,28 +1587,6 @@ class Reactor(object):
         else:
             raise NotImplementedError(self.mqtt_state)
 
-    def __on_pingreq(self, pingreq):
-        """
-
-        Parameters
-        ----------
-        pingreq: MqttPingreq
-        """
-        assert self.sock_state in (SocketState.connected, SocketState.mute)
-
-        if self.mqtt_state is MqttState.connack:
-            self.__abort_early_packet(pingreq)
-        elif self.mqtt_state is MqttState.connected:
-            if self.sock_state is SocketState.connected:
-                self.__log.info('Received %s.', repr(pingreq))
-                self.__preflight_queue.append(MqttPingresp())
-            elif self.sock_state is SocketState.mute:
-                self.__log.info('Received %s; ignoring because muted.', repr(pingreq))
-            else:
-                raise NotImplementedError(self.state)
-        else:
-            raise NotImplementedError(self.mqtt_state)
-
     def __on_pingresp(self, pingresp):
         """
 
@@ -1607,8 +1598,6 @@ class Reactor(object):
             self.__abort_early_packet(pingresp)
         elif self.mqtt_state is MqttState.connected:
             if self.__pingreq_active:
-                assert self.keepalive_period
-
                 self.__log.info('Received %s.', repr(pingresp))
                 self.__pingreq_active = False
             else:
@@ -1891,6 +1880,8 @@ class Reactor(object):
     # How to implement __del__?  Easiest just to call terminate which
     # closes all resources.
     #
+    # Implementing __del__ looks very tricky.
+    #
     # def __del__(self):
     #     pass
     #
@@ -2001,6 +1992,24 @@ class Reactor(object):
         """
         self.__terminate(ReactorState.error, e)
 
+    def __launch_pingreq_if_inactive(self):
+        """Launch pingreq if it one is not already active.
+
+        Returns
+        -------
+        bool
+            True if a pingreq has been launched, false otherwise.
+        """
+
+        if not self.__pingreq_active:
+            self.__pingreq_active = True
+            self.__preflight_queue.append(MqttPingreq())
+            rv = True
+        else:
+            rv = False
+
+        return rv
+
     def __keepalive_due_timeout(self):
         """See [MQTT-3.1.2-23]"""
         self.__assert_state_rules()
@@ -2008,9 +2017,8 @@ class Reactor(object):
 
         assert self.sock_state is SocketState.connected
 
-        if not self.__pingreq_active:
-            self.__pingreq_active = True
-            self.__preflight_queue.append(MqttPingreq())
+        if self.mqtt_state is MqttState.connected:
+            self.__launch_pingreq_if_inactive()
 
         self.__keepalive_due_deadline.cancel()
         self.__keepalive_due_deadline = None
@@ -2021,13 +2029,8 @@ class Reactor(object):
     def __recv_idle_ping_timeout(self):
         """See [MQTT-3.1.2-23]"""
         self.__assert_state_rules()
-        assert self.__recv_idle_ping_deadline is not None
 
-        assert self.sock_state is SocketState.connected
-
-        if not self.__pingreq_active:
-            self.__pingreq_active = True
-            self.__preflight_queue.append(MqttPingreq())
+        self.__launch_pingreq_if_inactive()
 
         self.__recv_idle_ping_deadline.cancel()
         self.__recv_idle_ping_deadline = None
@@ -2051,7 +2054,7 @@ class Reactor(object):
 
         self.__recv_idle_abort_deadline = None
 
-        self.__abort(KeepaliveTimeoutReactorError())
+        self.__abort(RecvTimeoutReactorError())
 
         self.__update_io_notification()
         self.__assert_state_rules()

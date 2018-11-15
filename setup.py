@@ -70,6 +70,6 @@ setup(
         "Documentation": "https://haka-mqtt.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/kcallin/haka-mqtt",
     },
-    python_requires='~=2.7,~=3.6',
+#    python_requires='~=2.7,~=3.6',
 )
 

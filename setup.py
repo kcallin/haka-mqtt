@@ -1,11 +1,12 @@
 import sys
 from glob import glob
-from os.path import join, dirname
+from os import chdir
+from os.path import join, dirname, abspath
 from setuptools import setup, find_packages
 
 
 def read_path(filename):
-    with open(join(dirname(__file__), filename)) as f:
+    with open(join(project_dir, filename)) as f:
         return f.read()
 
 # Documentation on this setup function can be found at
@@ -33,6 +34,8 @@ else:
     install_requires=['mqtt-codec~=0.1']
 
 
+project_dir = abspath(dirname(__file__))
+chdir(project_dir)
 setup(
     name="haka-mqtt",
     version="0.2.0",

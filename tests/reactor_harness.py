@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import errno
 import logging
 import os
@@ -102,6 +104,9 @@ class DebugFuture(object):
             self.__callbacks.append(fn)
 
 
+P3K = sys.version_info.major >= 3
+
+
 class ClockLogger(logging.Logger):
     clock = None
     start_time = None
@@ -109,13 +114,24 @@ class ClockLogger(logging.Logger):
     def __init__(self, name, level=logging.NOTSET):
         logging.Logger.__init__(self, name, level=level)
 
-    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
-        log_record = super(type(self), self).makeRecord(name, level, fn, lno, msg, args, exc_info, func=None, extra=None)
-        ct = ClockLogger.clock.time()
-        log_record.created = ct
-        log_record.msecs = (ct - int(log_record.created)) * 1000
-        log_record.relativeCreated = (log_record.created - ClockLogger.start_time) * 1000
-        return log_record
+    if P3K:
+        def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
+            log_record = super(type(self), self).makeRecord(name, level, fn, lno, msg, args, exc_info,
+                                                            func=func, extra=extra, sinfo=sinfo)
+            ct = ClockLogger.clock.time()
+            log_record.created = ct
+            log_record.msecs = (ct - int(log_record.created)) * 1000
+            log_record.relativeCreated = (log_record.created - ClockLogger.start_time) * 1000
+            return log_record
+    else:
+        def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None):
+            log_record = super(type(self), self).makeRecord(name, level, fn, lno, msg, args, exc_info,
+                                                            func=func, extra=extra)
+            ct = ClockLogger.clock.time()
+            log_record.created = ct
+            log_record.msecs = (ct - int(log_record.created)) * 1000
+            log_record.relativeCreated = (log_record.created - ClockLogger.start_time) * 1000
+            return log_record
 
 
 class ClockDurationScheduler(DurationScheduler):

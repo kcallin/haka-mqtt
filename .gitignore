@@ -4,4 +4,5 @@ build
 haka_mqtt.dist-info
 haka_mqtt.egg-info
 dist
-
+.eggs
+venv

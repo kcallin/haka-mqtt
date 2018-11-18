@@ -39,33 +39,27 @@ chdir(project_dir)
 setup(
     name="haka-mqtt",
     version="0.2.0",
+    # Want to specify opt-in versions but found that when using
+    # pip 9.0.3 (who knows what other versions), the comma seems to
+    # prevent any part of the string from being recognized.
+    #
+    # python_requires='==2.7.*,==3.4.*,==3.5.*,==3.6.*,==3.7.*',
+    #
+    python_requires='>=2.7',
     install_requires=install_requires,
-    tests_require = [
-        'mock',
-    ],
-    classifiers=[  # Optional
-        # How mature is this project? Common values are
-        #   3 - Alpha
-        #   4 - Beta
-        #   5 - Production/Stable
-        'Development Status :: 3 - Alpha',
-
-        # Indicate who your project is intended for
-        'Intended Audience :: Developers',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-    ],
+    tests_require=['mock'],
     use_2to3=True,
+    packages=['haka_mqtt'],
+    scripts=glob("scripts/*.py"),
     test_suite="tests",
-    packages=find_packages(),
     author="Keegan Callin",
     author_email="kc@kcallin.net",
-    scripts=glob("scripts/*.py"),
-#    license="PSF",
-#    keywords="hello world example examples",
-#    could also include long_description, download_url, classifiers, etc.
+    # license param is used when the license is not specified as a trove
+    # classifier. According to note (5) at
+    #
+    #   Writing the Setup Script, Note 5, https://docs.python.org/3/distutils/setupscript.html#additional-meta-data
+    #     Retrieved 2018-11-17.
+    #
     url="https://github.com/kcallin/haka-mqtt",   # project home page
     description="Weapons grade MQTT client.",
     long_description=read_path('README.rst'),
@@ -74,6 +68,30 @@ setup(
         "Documentation": "https://haka-mqtt.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/kcallin/haka-mqtt",
     },
-#    python_requires='~=2.7,~=3.6',
+    classifiers=[
+        # How mature is this project? Common values are
+        #   3 - Alpha
+        #   4 - Beta
+        #   5 - Production/Stable
+        'Development Status :: 3 - Alpha',
+
+        # Indicate who your project is intended for
+        'Intended Audience :: Developers',
+        'Topic :: Communications',
+        'Topic :: Internet',
+        'Topic :: Software Development',
+        'Topic :: Software Development :: Libraries',
+        'Topic :: Software Development :: Libraries :: Python Modules',
+        'Programming Language :: Python',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
+        'Operating System :: POSIX :: Linux',
+    ],
 )
 

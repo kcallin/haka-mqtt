@@ -109,7 +109,7 @@ class ClockLogger(logging.Logger):
     def __init__(self, name, level=logging.NOTSET):
         logging.Logger.__init__(self, name, level=level)
 
-    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None):
+    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
         log_record = super(type(self), self).makeRecord(name, level, fn, lno, msg, args, exc_info, func=None, extra=None)
         ct = ClockLogger.clock.time()
         log_record.created = ct

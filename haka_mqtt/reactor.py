@@ -1266,7 +1266,9 @@ class Reactor(object):
             except ssl.SSLWantReadError:
                 self.__ssl_want_read = True
             except ssl.SSLError as e:
-                # TODO:
+                # TODO #14
+                #
+                # Issue: https://github.com/kcallin/haka-mqtt/issues/14
                 #
                 # In blocking socket mode can't find a way to detect
                 # a timeout other than a string comparison.  SUPER

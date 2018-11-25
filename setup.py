@@ -60,6 +60,10 @@ setup(
     #
     url="https://github.com/kcallin/haka-mqtt",   # project home page
     description="Weapons grade MQTT client.",
+    # Instruction on how to create a good README.rst
+    #
+    # https://packaging.python.org/guides/making-a-pypi-friendly-readme/
+    #
     long_description=read_path('README.rst'),
     long_description_content_type='text/x-rst',
     project_urls={

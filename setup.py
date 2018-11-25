@@ -22,16 +22,14 @@ def read_path(filename):
 
 
 py_version = (sys.version_info.major, sys.version_info.minor)
+install_requires = [
+    # Syntax introduced sometime between setuptools-32.1.0 and setuptools-36.7.0
+    # 'enum34>=1.1.6;python_version<"3.4"',
+    # https://stackoverflow.com/questions/21082091/install-requires-based-on-python-version
+    'mqtt-codec~=1.0',
+]
 if py_version < (3, 4):
-    install_requires = [
-        # Syntax introduced sometime between setuptools-32.1.0 and setuptools-36.7.0
-        # 'enum34>=1.1.6;python_version<"3.4"',
-        # https://stackoverflow.com/questions/21082091/install-requires-based-on-python-version
-        'enum34>=1.1.6',
-        'mqtt-codec~=0.1',
-    ]
-else:
-    install_requires=['mqtt-codec~=0.1']
+    install_requires.append('enum34>=1.1.6')
 
 
 project_dir = abspath(dirname(__file__))

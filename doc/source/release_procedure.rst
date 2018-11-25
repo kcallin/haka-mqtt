@@ -2,16 +2,27 @@
 Distributing haka-mqtt
 =======================
 
-
-Distributing Source
-====================
-
 The release procedure was created using information from these core sources:
 
 * `PEP 503 - Simple Repository API <https://www.python.org/dev/peps/pep-0503/>`_
 * `Python Packaging User Guide <https://packaging.python.org/>`_
 * `Twine <https://pypi.org/project/twine/>`_
 
+
+Version Checks
+===============
+
+Verify that version and release numbers in ``doc/source/conf.py`` match
+``setup.py``.
+
+.. code-block:: bash
+
+    $ grep -e version -e release doc/source/conf.py
+    # The short X.Y version
+    version = u'1.0.0'
+    # The full version, including alpha/beta/rc tags
+    release = u'1.0.0'
+    $
 
 Ensure there are no old build artifacts.
 
@@ -20,6 +31,36 @@ Ensure there are no old build artifacts.
     $ rm dist/*
     $ ls dist
     $
+
+It's a common problem to accidentally forget to commit important
+changes.  To combat this the ``pyvertest.py`` procedure clones the haka
+repository, passes it to a docker container, and runs a test battery in
+a set of environments.
+
+.. code-block:: none
+
+    $ ./pyvertest.py
+    [... removed for brevity ...]
+    pip install python:3.7-alpine3.8
+    docker run --rm -v /home/kcallin/src/haka-mqtt:/haka-mqtt python:3.7-alpine3.8 pip install /haka-mqtt
+    Processing /haka-mqtt
+    Building wheels for collected packages: haka-mqtt
+      Running setup.py bdist_wheel for haka-mqtt: started
+      Running setup.py bdist_wheel for haka-mqtt: finished with status 'done'
+      Stored in directory: /root/.cache/pip/wheels/c1/64/0f/d02b6f3717526372cf5d4a5beb9b63181eb54bd4ed964fa7e1
+    Successfully built haka-mqtt
+    Installing collected packages: haka-mqtt
+    Successfully installed haka-mqtt-1.0.0-uncontrolled-20181125
+    Return code 0
+    > All okay.
+
+Create, sign, and push release tag:
+
+.. code-block:: bash
+
+    $ git tag -s v0.1.0
+    $ git push origin v0.1.0
+
 
 Create release build artifacts.
 
@@ -109,11 +150,26 @@ PEP-314 -- Metadata for Python Software Packages v1.1
        retrieved 2018-09-07.
 
 
-Distributing Documentation
+Distribute Documentation
 ===========================
+
+Documentation is distributed through
+`readthedocs.org <https://haka-mqtt.readthedocs.io/en/latest>`_.  After
+a release visit the `haka-mqtt readthedocs project <https://readthedocs.org/projects/haka-mqtt/>`_,
+select "Versions" click on "inactive" versions and make sure that the
+correct versions are marked as "Active".
+
+
+Increment Version Number
+=========================
+
+The release number in `setup.py` has been consumed and should never be
+used again.  Take the time to increment the number, commit the change,
+then push the change.
 
 .. code-block:: none
 
-    $ pip install sphinxcontrib-seqdiag
-    $ make html
-    $
+    $ vi setup.py
+    $ vi doc/source/conf.py
+    $ git commit setup.py
+    $ git push origin master

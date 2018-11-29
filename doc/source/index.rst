@@ -7,14 +7,18 @@
 `haka-mqtt` Project Documentation
 ===================================
 
-Weapons grade MQTT python client.
+The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
+It contains a core mqtt reactor class built with provable reliability,
+and reproducibility as its fundamental goals.  It turns out that it is
+sufficiently speedy as well; there has never been a performance
+complaint lodged.
+
 
 Status
 =======
 
-The project's ambition is to be a "weapons grade MQTT python client".
-This ambition has not yet been realized and the project is not ready for
-public consumption (2018-09-01).
+The project's core reactor is stable.  It has been tested on systems
+with thousands of distributed nodes in difficult field conditions.
 
 
 Installation

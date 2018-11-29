@@ -3,8 +3,16 @@ User Guide
 ===========
 
 The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
-It contains a core mqtt reactor class that is harnessed to event loops
-with different frontends.
+It contains a core mqtt reactor class built with provable reliability,
+and reproducibility as its fundamental goals.  It turns out that it is
+sufficiently speedy as well; there has never been a performance
+complaint lodged.
+
+The core reactor takes some time to plumb into an application event loop.
+To make life easier for simple use cases `haka-mqtt` includes a number of
+front-ends that speed implementation by making some reasonable
+assumptions.  If these assumptions do not hold for application then it
+best to use the core reactor directly.
 
 
 .. toctree::
@@ -12,8 +20,8 @@ with different frontends.
    :caption: Contents:
 
    quickstart
-   frontend
    core
+   frontend
    build_doc
    semver
    requirements

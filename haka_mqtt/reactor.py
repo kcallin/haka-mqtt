@@ -802,7 +802,14 @@ class Reactor(object):
         return list(self.__preflight_queue)
 
     def subscribe(self, topics):
-        """
+        """Places a ``subscribe`` packet on the preflight queue.
+        Messages in the preflight queue will be placed in-flight as soon
+        as the socket allows.  Multiple messages may be placed in-flight
+        at the same time.
+
+        If the reactor encounters an error or stops then unacknowledged
+        ``subscribe`` packets will be dropped whether they are in the
+        preflight or the in-flight queues.
 
         Parameters
         ----------
@@ -828,7 +835,14 @@ class Reactor(object):
         return req
 
     def unsubscribe(self, topics):
-        """
+        """Places an ``unsubscribe`` packet on the preflight queue.
+        Messages in the preflight queue will be placed in-flight as soon
+        as the socket allows.  Multiple messages may be placed in-flight
+        at the same time.
+
+        If the reactor encounters an error or stops then unacknowledged
+        ``unsubscribe`` packets will be dropped whether they are in the
+        preflight or the in-flight queues.
 
         Parameters
         ----------
@@ -854,9 +868,44 @@ class Reactor(object):
         return req
 
     def publish(self, topic, payload, qos, retain=False):
-        """Places a publish packet on the preflight queue.  The reactor
-        will make best effort to launch packets from the preflight queue
-        and send them to the server.
+        """Places a publish packet on the preflight queue.  Messages in
+        the preflight queue are fair-queued and launched to the server.
+        The reactor certainly will try to place as many messages
+        in-flight as it is able to.  If you want to limit the number of
+        messages in-flight then a queue should be maintained outside of
+        the core reactor.
+
+        QoS 0 messages are placed in the pre-flight buffer and are
+        eligable for delivery as fast as the socket allows.  If the
+        reactor encounters an error or stops and is subsequently
+        started then any QoS=0 messages in the preflight queue are
+        discarded.  QoS 0 messages are considered delivered as soon as
+        one of their bytes is placed in the socket write buffer
+        regardless of whether the network successfully delivers them to
+        their destination.
+
+        QoS 1 messages are placed in the pre-flight buffer and are
+        eligable for delivery as fast as the socket allows.  They are
+        placed in the in-flight queue as soon as the first byte of the
+        packet is placed in the socket write buffer.  If the reactor
+        encounters an error or stops and is subsequently started then
+        any QoS=1 messages in the preflight queue maintain their
+        positions.  Any messages in the in-flight queue are placed in
+        the front of the preflight queue as ``publish`` packets with
+        their dupe flags set to ``True``.
+
+        QoS 2 messages are placed in the pre-flight buffer and are
+        eligable for delivery as fast as the socket allows.  They are
+        placed in the in-flight queue as soon as the first byte of the
+        packet is placed in the socket write buffer.  If the reactor
+        encounters an error or stops and is subsequently started then
+        any QoS=2 messages in the preflight queue maintain their
+        positions.  Any messages in the in-flight queue awaiting
+        ``pubrec`` acknowledgements are placed in the front of the
+        preflight queue as publish packets with their dupe flags set to
+        ``True``.  Any messages in the in-flight queue awaiting
+        ``pubcomp`` acknowledgements are placed in the front of the
+        preflight queue as ``pubrel`` packets.
 
         Parameters
         -----------

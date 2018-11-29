@@ -301,7 +301,7 @@ class SslReactorError(ReactorError):
 
     Parameters
     ----------
-    error: ssl.SSLError
+    ssl_error: ssl.SSLError
     """
     def __init__(self, ssl_error):
         assert ssl_error is not None
@@ -947,7 +947,7 @@ class Reactor(object):
 
         Parameters
         ----------
-        Future
+        future
             The future.results will be a 5-tuple
             of (family, socktype, proto, canonname, sockaddr) or None if
             there was no result.

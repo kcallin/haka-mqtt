@@ -24,8 +24,9 @@ The haka-mqtt package can be from `<pypi.org>`_ with
 Usage
 ======
 
-A quick example of how the package can be used::
+A quick example of how the package can be used:
 
+.. code-block:: python
     # Standard python Packages
     import logging
 

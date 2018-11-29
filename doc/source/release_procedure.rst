@@ -9,7 +9,7 @@ The release procedure was created using information from these core sources:
 * `Twine <https://pypi.org/project/twine/>`_
 
 
-Version Checks
+Test Release
 ===============
 
 Verify that version and release numbers in ``doc/source/conf.py`` match
@@ -54,19 +54,21 @@ a set of environments.
     Return code 0
     > All okay.
 
-Create, sign, and push release tag:
+
+Ensure that CHANGELOG.rst has release version and release date correct
+as well as release content listed.
 
 .. code-block:: bash
 
-    $ git tag -s v0.1.0
-    $ git push origin v0.1.0
+    $ vi CHANGELOG.rst
+    $ git commit -S CHANGELOG.rst
 
 
-Create release build artifacts.
+Create test release artifacts.
 
 .. code-block:: none
 
-    $ python setup.py egg_info -D -b '' sdist
+    $ python setup.py egg_info -D -b 'test' sdist
     running sdist
     running egg_info
     writing requirements to haka_mqtt.egg-info/requires.txt
@@ -88,7 +90,8 @@ Create release build artifacts.
     haka-mqtt-0.1.2.tar.gz
     $
 
-GPG signatures are created for release artifacts.
+
+GPG signatures are created for test release artifacts.
 
 .. code-block:: none
 
@@ -108,6 +111,27 @@ GPG signatures are created for release artifacts.
     Primary key fingerprint: BD51 01F1 9699 A719 E563  6D85 4A4A 7B98 14BC 2EFF
          Subkey fingerprint: BE56 D781 0163 488F C7AE  62AC 3914 0AE2 DD53 792F
     $
+
+
+.. https://packaging.python.org/guides/making-a-pypi-friendly-readme/#validating-restructuredtext-markup
+   (Retrieved 2018-11-28)
+
+Ensure that twine version 1.12.0 or high is installed:
+
+.. code-block:: none
+
+    $ twine --version
+    twine version 1.12.0 (pkginfo: 1.4.2, requests: 2.20.1, setuptools: 40.6.2,
+    requests-toolbelt: 0.8.0, tqdm: 4.28.1)
+
+
+Verify that distribution passes twine checks:
+
+.. code-block:: none
+
+    $ twine check dist/*
+    Checking distribution dist/haka-mqtt-1.0.0.tar.gz: Passed
+
 
 Release artifacts are uploaded to **TEST** PyPI.
 
@@ -137,10 +161,6 @@ After the checklist is complete then it is time to upload to **real**
 PyPI and verify that the release is complete.  There is no undoing
 this operation.  Think Carefully.
 
-.. code-block:: none
-
-    $ twine upload dist/*
-
 
 PEP 508 -- Dependency specification for Python Software Packages
 
@@ -148,6 +168,90 @@ PEP-314 -- Metadata for Python Software Packages v1.1
 
 .. [#] `Test PyPI, Registering Your Account <https://packaging.python.org/guides/using-testpypi/#registering-your-account>`_,
        retrieved 2018-09-07.
+
+Official Release
+=================
+
+Create, sign, and push release tag:
+
+.. code-block:: bash
+
+    $ git tag -s v0.1.0
+    $ git push origin v0.1.0
+
+
+Remove test artifacts:
+
+.. code-block:: bash
+
+    $ rm dist/*
+    $ ls dist
+    $
+
+
+Create official release artifacts.
+
+.. code-block:: none
+
+    $ python setup.py egg_info -D -b 'test' sdist
+    running sdist
+    running egg_info
+    writing requirements to haka_mqtt.egg-info/requires.txt
+    writing haka_mqtt.egg-info/PKG-INFO
+    writing top-level names to haka_mqtt.egg-info/top_level.txt
+    writing dependency_links to haka_mqtt.egg-info/dependency_links.txt
+    reading manifest file 'haka_mqtt.egg-info/SOURCES.txt'
+    writing manifest file 'haka_mqtt.egg-info/SOURCES.txt'
+    running check
+    creating haka-mqtt-0.1.2
+    creating haka-mqtt-0.1.2/haka_mqtt
+    [... removed for brevity ...]
+    copying tests/test_reactor.py -> haka-mqtt-0.1.2/tests
+    copying tests/test_scheduler.py -> haka-mqtt-0.1.2/tests
+    Writing haka-mqtt-0.1.2/setup.cfg
+    Creating tar archive
+    removing 'haka-mqtt-0.1.2' (and everything under it)
+    $ ls dist
+    haka-mqtt-0.1.2.tar.gz
+    $
+
+
+GPG sign official release artifact:
+
+.. code-block:: none
+
+    $ gpg --detach-sign -a dist/haka-mqtt-0.1.2.tar.gz
+
+    You need a passphrase to unlock the secret key for
+    user: "Keegan Callin <kc@kcallin.net>"
+    4096-bit RSA key, ID DD53792F, created 2017-01-01 (main key ID 14BC2EFF)
+
+    gpg: gpg-agent is not available in this session
+    $ ls dist
+    haka-mqtt-0.1.2.tar.gz  haka-mqtt-0.1.2.tar.gz.asc
+    $ gpg --verify dist/haka-mqtt-0.1.2.tar.gz.asc
+    gpg: assuming signed data in `dist/haka-mqtt-0.1.2.tar.gz'
+    gpg: Signature made Sat 01 Sep 2018 11:00:31 AM MDT using RSA key ID DD53792F
+    gpg: Good signature from "Keegan Callin <kc@kcallin.net>" [ultimate]
+    Primary key fingerprint: BD51 01F1 9699 A719 E563  6D85 4A4A 7B98 14BC 2EFF
+         Subkey fingerprint: BE56 D781 0163 488F C7AE  62AC 3914 0AE2 DD53 792F
+    $
+
+
+The access credentials in `~/.pypirc` contains the username/password
+that twine uses for PyPI.
+
+.. code-block:: none
+
+    $ cat ~/.pypirc
+    [distutils]
+    index-servers =
+        pypi
+
+    [pypi]
+    username:<XXXXXX>
+    password:<XXXXXX>
+    $ twine upload dist/*
 
 
 Distribute Documentation
@@ -158,6 +262,13 @@ Documentation is distributed through
 a release visit the `haka-mqtt readthedocs project <https://readthedocs.org/projects/haka-mqtt/>`_,
 select "Versions" click on "inactive" versions and make sure that the
 correct versions are marked as "Active".
+
+The ``mqtt-codec`` project documentation uses
+`PlantUML <https://pypi.org/project/plantuml/>`_ to draw diagrams and
+this package is not support out-of-the-box by `readthedocs`.  The
+project root directory contains a ``.readthedocs.yml`` file to set the
+build `readthedocs` build environment to one that supports PlantUML and
+bypass the problem.
 
 
 Increment Version Number

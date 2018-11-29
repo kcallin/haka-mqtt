@@ -4,7 +4,7 @@ import socket
 import sys
 from argparse import ArgumentParser, ArgumentTypeError
 
-from haka_mqtt.poll import MqttPollClientProperties, MqttPollClient
+from haka_mqtt.frontends.poll import MqttPollClientProperties, MqttPollClient
 from mqtt_codec.packet import MqttTopic
 
 TOPIC = 'bubbles'

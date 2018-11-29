@@ -6,7 +6,7 @@ publish on that topic, then cleanly disconnects."""
 import logging
 
 # 3rd-Party Packages
-from haka_mqtt.poll import (
+from haka_mqtt.frontends.poll import (
     MqttPollClientProperties,
     BlockingMqttClient
 )

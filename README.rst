@@ -1,18 +1,22 @@
-haka-mqtt
+==========
+haka-mqtt=
 =========
 
-Weapons grade MQTT python client.
+The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
+It contains a core mqtt reactor class built with provable reliability,
+and reproducibility as its fundamental goals.  It turns out that it is
+sufficiently speedy as well; there has never been a performance
+complaint lodged.
 
 Status
--------
+=======
 
-The project's ambition is to be a "weapons grade MQTT python client".
-This ambition has not yet been realized and the project is not ready for
-public consumption (2018-09-01).
+The project's core reactor is stable.  It has been tested on systems
+with thousands of distributed nodes in difficult field conditions.
 
 
 Installation
--------------
+=============
 
 The haka-mqtt package can be from `<pypi.org>`_ with
 `pip <https://pypi.org/project/pip/>`_:
@@ -32,7 +36,7 @@ A quick example of how the package can be used:
     import logging
 
     # 3rd-Party Packages
-    from haka_mqtt.poll import (
+    from haka_mqtt.frontends.poll import (
         MqttPollClientProperties,
         BlockingMqttClient
     )
@@ -60,7 +64,7 @@ A quick example of how the package can be used:
 
 
 Project Infrastructure
------------------------
+=======================
 
 The project is coordinated through public infrastructure available at
 several places:

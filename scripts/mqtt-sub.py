@@ -3,9 +3,9 @@ from __future__ import print_function
 import logging
 import socket
 import sys
-from argparse import ArgumentTypeError, ArgumentParser
+from argparse import ArgumentParser
 
-from haka_mqtt.poll import MqttPollClientProperties, MqttPollClient
+from haka_mqtt.frontends.poll import MqttPollClientProperties, MqttPollClient
 from haka_mqtt.reactor import ACTIVE_STATES
 from mqtt_codec.packet import MqttTopic
 

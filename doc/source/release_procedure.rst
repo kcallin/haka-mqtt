@@ -193,7 +193,7 @@ Create official release artifacts.
 
 .. code-block:: none
 
-    $ python setup.py egg_info -D -b 'test' sdist
+    $ python setup.py egg_info -D -b 'a' sdist
     running sdist
     running egg_info
     writing requirements to haka_mqtt.egg-info/requires.txt

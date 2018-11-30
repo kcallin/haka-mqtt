@@ -4,9 +4,8 @@ haka-mqtt
 
 The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
 It contains a core mqtt reactor class built with provable reliability,
-and reproducibility as its fundamental goals.  It turns out that it is
-sufficiently speedy as well; there has never been a performance
-complaint lodged.
+and reproducibility as its fundamental goals.  A side effect is that the
+library turns out to be speedy as well.
 
 Status
 =======

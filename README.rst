@@ -1,6 +1,6 @@
 ==========
-haka-mqtt=
-=========
+haka-mqtt
+==========
 
 The `haka_mqtt` package is reliable "weapons grade" MQTT client library.
 It contains a core mqtt reactor class built with provable reliability,

@@ -1,20 +1,21 @@
 "Weapons Grade"
 ===============
 
-The `haka-mqtt` project was a response to a lack of reliability and
-rigorous documentation in existing python MQTT clients at the time.
-The authors were involved in projects that required thousands of
-clients to operate for years without service in soft realtime
-conditions over unreliable low-bandwith bandwidth data links.  There
-was great desire to use off the shelf libraries but after two years of
-trying it was decided that a new approach, `haka-mqtt`, was needed.
+The `haka-mqtt` project was a response to reliability problems and
+the absence of thorough documentation in existing python MQTT clients
+at the time.  The authors were involved in projects that required
+thousands of clients to operate for years without service in soft
+realtime conditions over unreliable low-bandwith bandwidth data links.
+There was great desire to use off the shelf libraries but after two
+years of trying it was decided that a new approach, `haka-mqtt`, was
+needed.
 
 The new `haka-mqtt` library provides at its core a reactor built to be
 thoroughly and deterministically tested.  Its memory usage is stable
 and well documented.  It is built to use non-blocking sockets in a
 select-type M:N thread model where M client tasks are mapped onto
-N threads.  Where suitable non-blocking APIs are not available (DNS
-lookups), those operations can be performed in separate thread-pools
+N threads.  When suitable non-blocking APIs are not available (as for
+DNS lookups), those operations can be performed in separate thread-pools
 so that the client can continue its non-blocking operation.
 
 Due to persistent questions it is necessary to state that the project

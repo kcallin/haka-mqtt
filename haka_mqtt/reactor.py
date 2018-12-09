@@ -424,7 +424,7 @@ class Reactor(object):
         assert isinstance(properties.keepalive_period, int)
         assert 0 < properties.recv_idle_abort_period
         assert isinstance(properties.recv_idle_abort_period, int)
-        assert 0 < properties.recv_idle_ping_period
+        assert 0 <= properties.recv_idle_ping_period
         assert isinstance(properties.recv_idle_ping_period, int)
         assert isinstance(properties.clean_session, bool)
         assert callable(properties.name_resolver)
@@ -661,9 +661,10 @@ class Reactor(object):
 
     @property
     def recv_idle_ping_period(self):
-        """int: 0 < ``self.recv_idle_ping_period``; sends a
+        """int: 0 <= ``self.recv_idle_ping_period``; sends a
         ``MqttPingreq`` packet to the server after this many seconds
-        without receiving and bytes on the socket."""
+        without receiving and bytes on the socket.  If zero then ping
+        messages are not sent when receive stream is idle."""
         return self.__recv_idle_ping_period
 
     @property
@@ -1231,7 +1232,8 @@ class Reactor(object):
                 self.__recv_idle_ping_deadline.cancel()
                 self.__recv_idle_ping_deadline = None
 
-            self.__recv_idle_ping_deadline = self.__scheduler.add(self.recv_idle_ping_period, self.__recv_idle_ping_timeout)
+            if self.recv_idle_ping_period > 0:
+                self.__recv_idle_ping_deadline = self.__scheduler.add(self.recv_idle_ping_period, self.__recv_idle_ping_timeout)
 
         self.__recv_idle_abort_deadline.cancel()
         self.__recv_idle_abort_deadline = self.__scheduler.add(self.__recv_idle_abort_period,
@@ -2093,7 +2095,7 @@ class Reactor(object):
 
     def __recv_idle_abort_timeout(self):
         """Called when bytes have not been received from the server for
-        at least ``self.abort_period`` seconds."""
+        at least ``self.recv_idle_ping_period`` seconds."""
         self.__assert_state_rules()
 
         assert self.__keepalive_due_deadline is None

@@ -17,8 +17,8 @@ with thousands of distributed nodes in difficult field conditions.
 Installation
 =============
 
-The haka-mqtt package can be from `<pypi.org>`_ with
-`pip <https://pypi.org/project/pip/>`_:
+The haka-mqtt package can be from `pypi.org <https://pypi.org>`_ with
+`pip <https://pip.pypa.io/en/stable/>`_:
 
 .. code-block:: bash
 

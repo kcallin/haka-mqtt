@@ -6,3 +6,4 @@ haka_mqtt.egg-info
 dist
 .eggs
 venv
+.coverage

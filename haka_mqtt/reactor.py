@@ -409,9 +409,11 @@ class Reactor(object):
     ----------
     properties: ReactorProperties
     log: str or logging.Logger or None
-        If `str` then calls logging.getLogger(log) to acquire a logger;
-        otherwise asserts that `log` has `debug`, `info`, etc. methods
-        and uses log as if it were a `logging.getLogger` object.
+        If `str` then the result of logging.getLogger(log) is used as a
+        logger; otherwise assumes that is a `logging.Logger`-like
+        object and asserts that it has `debug`, `info`, `warning`,
+        `error`, and `critical` methods.  If `log` is `None` then
+        logging is disabled.
     """
     def __init__(self, properties, log='haka'):
         assert properties.client_id is not None

@@ -1918,7 +1918,10 @@ class Reactor(object):
                     self.__keepalive_due_deadline.cancel()
                     self.__keepalive_due_deadline = None
 
-                if self.keepalive_period:
+                if self.keepalive_period and not self.__pingreq_active:
+                    # Only schedule a keepalive deadline if one is not
+                    # already active.
+                    #
                     self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
         return num_bytes_written

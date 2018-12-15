@@ -57,8 +57,9 @@ class TestKeepalive(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.send_packet(MqttPingreq())
 
-        # Next keepalive is set.
-        self.assertEqual(self.keepalive_period, self.scheduler.remaining())
+        # Next deadline is idle abort.
+        self.assertEqual(self.recv_idle_ping_period, self.scheduler.remaining())
+        self.scheduler.poll(self.scheduler.remaining())
 
         # A pingresp is an error at this point.
         self.reactor.terminate()
@@ -154,6 +155,37 @@ class TestKeepalive(TestReactor, unittest.TestCase):
 
         self.recv_eof()
         self.assertEqual(ReactorState.stopped, self.reactor.state, self.reactor.error)
+
+
+class TestKeepaliveScheduling16(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        self.keepalive_period = 15  # Set keepalive period so that it dominates.
+        self.recv_idle_ping_period = 0  # Disable receive pings.
+        self.recv_idle_abort_period = 17
+        return TestReactor.reactor_properties(self)
+
+    def test_keepalive_not_scheduled_while_pingreq_active(self):
+        """
+        https://github.com/kcallin/haka-mqtt/issues/16
+        """
+        self.start_to_connected()
+        self.assertEqual(self.keepalive_period, self.scheduler.remaining())
+        self.assertFalse(self.reactor.want_write())
+        self.scheduler.poll(self.keepalive_period)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+        self.assertFalse(self.reactor.want_write())
+
+        pub_ticket = self.reactor.publish('topic', b'payload', 1)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(pub_ticket.packet())
+        self.assertFalse(self.reactor.want_write())
+
+        recv_idle_abort_remaining = self.recv_idle_abort_period - self.keepalive_period
+        self.assertEqual(recv_idle_abort_remaining, self.scheduler.remaining())
+        self.scheduler.poll(recv_idle_abort_remaining)
+
+        self.assertEqual(ReactorState.error, self.reactor.state)
 
 
 class TestKeepaliveDisabled(TestReactor, unittest.TestCase):

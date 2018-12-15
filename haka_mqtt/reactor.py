@@ -232,9 +232,7 @@ class ReactorError(object):
 class MutePeerReactorError(ReactorError):
     """Error that occurs when the server closes its write stream
     unexpectedly."""
-
-    def __repr__(self):
-        return '{}()'.format(self.__class__.__name__)
+    pass
 
 
 class ConnectReactorError(ReactorError):
@@ -259,16 +257,13 @@ class ConnectReactorError(ReactorError):
         return hasattr(other, 'result') and self.result == other.result
 
     def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, self.result)
+        return '{}({})'.format(self.__class__.__name__, repr(self.result))
 
 
 class RecvTimeoutReactorError(ReactorError):
     """Server fails to respond in a timely fashion."""
     def __eq__(self, other):
         return isinstance(other, RecvTimeoutReactorError)
-
-    def __repr__(self):
-        return '{}()'.format(self.__class__.__name__)
 
 
 class SocketReactorError(ReactorError):
@@ -290,7 +285,7 @@ class SocketReactorError(ReactorError):
         return self.__errno
 
     def __repr__(self):
-        return 'SocketError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
+        return 'SocketReactorError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
 
     def __eq__(self, other):
         return self.errno == other.errno
@@ -363,6 +358,9 @@ class ProtocolReactorError(ReactorError):
     """Server send an inappropriate MQTT packet to the client."""
     def __init__(self, description):
         self.description = description
+
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.description)
 
 
 class _AssertSelectAdapter(object):

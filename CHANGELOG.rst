@@ -1,4 +1,4 @@
-0.3.0 (2018-ab-cd)
+0.3.0 (2018-12-17)
 ===================
 
 It is recommended to update to update to 0.3.0 immediately to avoid a

@@ -44,15 +44,20 @@ a set of environments.
     pip install python:3.7-alpine3.8
     docker run --rm -v /home/kcallin/src/haka-mqtt:/haka-mqtt python:3.7-alpine3.8 pip install /haka-mqtt
     Processing /haka-mqtt
-    Building wheels for collected packages: haka-mqtt
+    Building wheels for collected packages: haka-mqtt, mqtt-codec
       Running setup.py bdist_wheel for haka-mqtt: started
       Running setup.py bdist_wheel for haka-mqtt: finished with status 'done'
-      Stored in directory: /root/.cache/pip/wheels/c1/64/0f/d02b6f3717526372cf5d4a5beb9b63181eb54bd4ed964fa7e1
-    Successfully built haka-mqtt
-    Installing collected packages: haka-mqtt
-    Successfully installed haka-mqtt-1.0.0-uncontrolled-20181125
+      Stored in directory: /root/.cache/pip/wheels/c5/b3/fa/e30017929f15cb43137c499453ff45f3754db112f34a52cb9d
+      Running setup.py bdist_wheel for mqtt-codec: started
+      Running setup.py bdist_wheel for mqtt-codec: finished with status 'done'
+      Stored in directory: /root/.cache/pip/wheels/b7/6b/0f/5fb8026a75541fb9fcdec2f3fc33b75aad929b48e85eca68a9
+    Successfully built haka-mqtt mqtt-codec
+    Installing collected packages: mqtt-codec, haka-mqtt
+    Successfully installed haka-mqtt-0.3.0-uncontrolled-20181217 mqtt-codec-1.0.1
     Return code 0
-    > All okay.
+    Removing container id b9d481a9f49b966fa6708e1ef9fda16d0142b35a7613fc794a43105b0eb6eb2b.
+    Removing temp directory /tmp/tmput2xuulf.
+    > 10/10 okay.
 
 
 Ensure that CHANGELOG.rst has release version and release date correct
@@ -145,12 +150,13 @@ Release artifacts are uploaded to **TEST** PyPI.
     $
 
 
-The resulting entry should be inspected for correctness.  "The database
-for TestPyPI may be periodically pruned, so it is not unusual for user
-accounts to be deleted [#]_".  Packages on **TEST** PyPI and **real**
-PyPI cannot be removed upon distributor demand.  On **TEST** PyPI
-packages may be removed on prune, on **real** PyPI they will remain
-forever.  A checklist to help verify the PyPI release page follows:
+The resulting `TestPyPI entry <https://test.pypi.org/project/haka-mqtt/>`_
+should be inspected for correctness.  "The database for TestPyPI may be
+periodically pruned, so it is not unusual for user accounts to be
+deleted [#]_".  Packages on **TEST** PyPI and **real** PyPI cannot be
+removed upon distributor demand.  On **TEST** PyPI packages may be
+removed on prune, on **real** PyPI they will remain forever.  A
+checklist to help verify the PyPI release page follows:
 
 * Version Number is Correct
 * Documentation Link is Correct

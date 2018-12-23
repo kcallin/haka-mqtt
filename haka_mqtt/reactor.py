@@ -267,16 +267,15 @@ class RecvTimeoutReactorError(ReactorError):
 
 
 class SocketReactorError(ReactorError):
-    """A socket error-code in `errno.errorcode`.
+    """A socket.error exception was raised by the socket subsystem and
+    it the error code was `self.errno`.  If this errno is in the
+    `errno.errorcode` lookup table then repr will show the description.
 
     Parameters
     ----------
     errno_val: int
-        Asserted to be in `errno.errorcode`.
     """
     def __init__(self, errno_val):
-        assert errno_val in errno.errorcode, errno_val
-
         self.__errno = errno_val
 
     @property
@@ -285,7 +284,12 @@ class SocketReactorError(ReactorError):
         return self.__errno
 
     def __repr__(self):
-        return 'SocketReactorError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
+        if self.errno in errno.errorcode:
+            rv = 'SocketReactorError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
+        else:
+            rv = 'SocketReactorError({})'.format(self.errno)
+
+        return rv
 
     def __eq__(self, other):
         return hasattr(other, 'errno') and self.errno == other.errno

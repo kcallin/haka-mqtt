@@ -288,7 +288,7 @@ class SocketReactorError(ReactorError):
         return 'SocketReactorError(<{}: {}>)'.format(errno.errorcode[self.errno], self.errno)
 
     def __eq__(self, other):
-        return self.errno == other.errno
+        return hasattr(other, 'errno') and self.errno == other.errno
 
 
 class SslReactorError(ReactorError):
@@ -2134,10 +2134,10 @@ class Reactor(object):
             if e == 0:
                 self.__on_connect()
                 self.__feed_wbuf()
-            elif errno.EINPROGRESS:
+            elif e == errno.EINPROGRESS:
                 pass
             else:
-                self.__abort_socket_error(SocketReactorError(e.errno))
+                self.__abort_socket_error(SocketReactorError(e))
         elif self.sock_state is SocketState.handshake:
             self.__set_handshake()
             self.__feed_wbuf()

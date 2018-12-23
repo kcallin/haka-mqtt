@@ -63,6 +63,9 @@ class TestDnsResolution(TestReactor, unittest.TestCase):
         self.reactor.start()
         self.assertEqual(SocketState.name_resolution, self.reactor.sock_state)
 
+        # Verify read results in no action.
+        self.reactor.read()
+        self.assertEqual([], self.socket.method_calls)
         self.on_connect_fail.assert_not_called()
         self.on_disconnect.assert_not_called()
 
@@ -1074,6 +1077,15 @@ class TestReactorPeerDisconnect(TestReactor, unittest.TestCase):
         self.reactor.read()
 
 
+class TestReactorInactiveReadWrite(TestReactor, unittest.TestCase):
+    def test_stop_read_write(self):
+        self.assertEqual(SocketState.stopped, self.reactor.sock_state)
+        self.reactor.read()
+        self.reactor.write()
+        self.assertEqual(self.socket.method_calls, [])
+        self.name_resolver.assert_not_called()
+
+
 class TestReactorStart(TestReactor, unittest.TestCase):
     def test_name_resolution(self):
         self.start_to_name_resolution()
@@ -1087,6 +1099,36 @@ class TestReactorStart(TestReactor, unittest.TestCase):
         self.assertEqual(ReactorState.starting, self.reactor.state)
         self.assertEqual(SocketState.connecting, self.reactor.sock_state)
         self.reactor.terminate()
+
+    def test_einprogress_connect(self):
+        self.start_to_connecting()
+
+        # Connect occurs
+        self.socket.getsockopt.return_value = errno.EINPROGRESS
+        self.reactor.write()
+        self.socket.getsockopt.assert_called_once()
+        self.socket.send.assert_not_called()
+        self.socket.recv.assert_not_called()
+        self.socket.reset_mock()
+
+        self.handshake_to_connected()
+        self.assertEqual(SocketState.connected, self.reactor.sock_state)
+        self.reactor.terminate()
+
+    def test_getsockopterror(self):
+        self.start_to_connecting()
+
+        # Connect occurs
+        e = errno.ETIMEDOUT
+        self.socket.getsockopt.return_value = e
+        self.reactor.write()
+        self.socket.getsockopt.assert_called_once()
+        self.socket.send.assert_not_called()
+        self.socket.recv.assert_not_called()
+        self.socket.reset_mock()
+
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertEqual(SocketReactorError(e), self.reactor.error)
 
     def test_handshake(self):
         self.start_to_handshake()

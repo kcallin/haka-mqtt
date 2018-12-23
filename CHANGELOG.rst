@@ -10,6 +10,15 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/17
 
+#18: Haka crash when SSL raises socket.error with zero errno.
+
+     Some SSL subsystems can raise socket.error exceptions with zero
+     errno values.  This fails one of haka's assertions.  The assertion
+     has been removed and the SocketReactorError class description has
+     been changed.
+
+     https://github.com/kcallin/haka-mqtt/issues/18
+
 
 0.3.0 (2018-12-17)
 ===================

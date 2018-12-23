@@ -1,3 +1,16 @@
+0.4.0 (2018-ab-cd)
+===================
+
+Fix
+----
+#17: Keepalive scheduled while pingreq already active.
+
+     After a DNS lookup succeds but the subsequent socket connect fails
+     core reactor may not enter the error state.
+
+     https://github.com/kcallin/haka-mqtt/issues/17
+
+
 0.3.0 (2018-12-17)
 ===================
 

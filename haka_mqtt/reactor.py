@@ -1558,9 +1558,9 @@ class Reactor(object):
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pubrec)
         elif self.mqtt_state is MqttState.connected:
-            in_flight_packet_ids = [p.packet_id for p in self.__inflight_queue.values() if p.packet_type is MqttControlPacketType.publish]
-            publish_ticket = self.__inflight_queue[in_flight_packet_ids[0]] if in_flight_packet_ids else None
-            if publish_ticket and publish_ticket.packet_id == pubrec.packet_id:
+            in_flight_publish_ids = dict([(p.packet_id, p) for p in self.__inflight_queue.values() if p.packet_type is MqttControlPacketType.publish])
+            if pubrec.packet_id in in_flight_publish_ids:
+                publish_ticket = in_flight_publish_ids[pubrec.packet_id]
                 if publish_ticket.qos == 2:
                     del self.__inflight_queue[pubrec.packet_id]
                     self.__log.info('Received %s.', repr(pubrec))
@@ -1570,21 +1570,10 @@ class Reactor(object):
 
                     self.__preflight_queue.insert(insert_idx, MqttPubrel(pubrec.packet_id))
                 else:
-                    publish = MqttPublish(publish_ticket.packet_id,
-                                          publish_ticket.topic,
-                                          publish_ticket.payload,
-                                          publish_ticket.dupe,
-                                          publish_ticket.qos,
-                                          publish_ticket.retain)
                     self.__abort_protocol_violation('Received unexpected %s in response to qos=%d publish %s; aborting.',
                                                     ReprOnStr(pubrec),
                                                     publish_ticket.qos,
-                                                    ReprOnStr(publish))
-            elif publish_ticket and pubrec.packet_id in in_flight_packet_ids:
-                m = 'Received unexpected %s when packet_id=%d was next-in-flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubrec),
-                                                publish_ticket.packet_id)
+                                                    ReprOnStr(publish_ticket.packet()))
             else:
                 m = 'Received unexpected %s when packet_id=%d was not in-flight; aborting.'
                 self.__abort_protocol_violation(m,
@@ -1605,17 +1594,11 @@ class Reactor(object):
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pubcomp)
         elif self.mqtt_state is MqttState.connected:
-            in_flight_pubrel_packet_ids = [p.packet_id for p in self.__inflight_queue.values() if p.packet_type is MqttControlPacketType.pubrel]
-            pubrel = self.__inflight_queue[in_flight_pubrel_packet_ids[0]] if in_flight_pubrel_packet_ids else None
-            if pubrel and pubrel.packet_id == pubcomp.packet_id:
+            in_flight_pubrel = dict([(p.packet_id, p) for p in self.__inflight_queue.values() if p.packet_type is MqttControlPacketType.pubrel])
+            if pubcomp.packet_id in in_flight_pubrel:
                 del self.__inflight_queue[pubcomp.packet_id]
                 self.__log.info('Received %s.', repr(pubcomp))
                 self.on_pubcomp(self, pubcomp)
-            elif pubrel and pubcomp.packet_id in in_flight_pubrel_packet_ids:
-                m = 'Received %s when packet_id=%d was the next pubrel in flight; aborting.'
-                self.__abort_protocol_violation(m,
-                                                ReprOnStr(pubcomp),
-                                                pubrel.packet_id)
             else:
                 m = 'Received %s when no pubrel for packet_id=%d was in-flight; aborting.'
                 self.__abort_protocol_violation(m,
@@ -1711,6 +1694,7 @@ class Reactor(object):
         # Write as many bytes as possible.
         self.__wbuf.extend(bio.getvalue())
         num_bytes_flushed = self.__flush()
+        assert num_bytes_flushed <= len(self.__wbuf)
 
         # Mark launched messages as in-flight.
         num_messages_launched = 0
@@ -1791,7 +1775,8 @@ class Reactor(object):
 
         if num_bytes_flushed:
             self.__log.debug('send %d bytes 0x%s.', num_bytes_flushed, HexOnStr(self.__wbuf[0:num_bytes_flushed]))
-            self.__wbuf = self.__wbuf[num_bytes_flushed:]
+
+        self.__wbuf = self.__wbuf[num_bytes_flushed:packet_end_offsets[num_messages_launched]]
 
         return num_bytes_flushed
 

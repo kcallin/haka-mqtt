@@ -1,6 +1,12 @@
 0.3.1 (2018-ab-cd)
 ===================
 
+New
+----
+#20: Remove ordering restrictions on QoS=2 send path.
+
+     https://github.com/kcallin/haka-mqtt/issues/20
+
 Fix
 ----
 #17: Keepalive scheduled while pingreq already active.
@@ -19,6 +25,14 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/18
 
+#19: Full socket buffer can trigger message retransmissions.
+
+     When the socket buffer is full and a call to send returns with zero
+     bytes then a second copy of the message may be queued in the
+     reactor write buffer. The end result is that the message can be
+     placed in flight more than once.
+
+     https://github.com/kcallin/haka-mqtt/issues/19
 
 0.3.0 (2018-12-17)
 ===================

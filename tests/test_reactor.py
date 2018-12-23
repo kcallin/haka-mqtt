@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import errno
 import os
+import ssl
 import unittest
 import socket
 
@@ -25,7 +26,7 @@ from haka_mqtt.mqtt_request import MqttPublishTicket, MqttPublishStatus, MqttSub
 from haka_mqtt.reactor import (
     ReactorState,
     ConnectReactorError, INACTIVE_STATES, SocketReactorError, AddressReactorError, DecodeReactorError,
-    ProtocolReactorError, SocketState, MqttState)
+    ProtocolReactorError, SocketState, MqttState, SslReactorError)
 from tests.reactor_harness import TestReactor, buffer_packet, socket_error
 
 
@@ -418,14 +419,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         4. Socket receives connack
         5. Publishes a QoS=0 packet;
         6. Calls write and places publish packet in-flight.
-
-        Returns
-        -------
-        MqttPublishTicket
-            The returned MqttPublishTicket will have its status set to
-            :py:const:`MqttPublishStatus.done`.
         """
-        # CHECKED-KC0 (2018-09-19)
         self.start_to_connected()
 
         # Create publish
@@ -456,6 +450,108 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
         self.assertEqual(set(), self.reactor.send_packet_ids())
+
+        self.reactor.terminate()
+
+    def test_flush_ssl_want_read_error(self):
+        self.start_to_connected()
+
+        # Create publish
+        publish_ticket = self.reactor.publish('topic',
+                                              b'payload',
+                                              0,
+                                              False)
+
+        publish_bytes = buffer_packet(publish_ticket.packet())
+        self.socket.send.side_effect = ssl.SSLWantReadError()
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.reset_mock()
+
+        self.socket.send.return_value = len(publish_bytes)
+        self.socket.send.side_effect = None
+
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
+
+        self.reactor.terminate()
+
+    def test_flush_ssl_want_write_error(self):
+        self.start_to_connected()
+
+        # Create publish
+        publish_ticket = self.reactor.publish('topic',
+                                              b'payload',
+                                              0,
+                                              False)
+
+        publish_bytes = buffer_packet(publish_ticket.packet())
+        self.socket.send.side_effect = ssl.SSLWantWriteError()
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.reset_mock()
+
+        self.socket.send.return_value = len(publish_bytes)
+        self.socket.send.side_effect = None
+
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
+
+        self.reactor.terminate()
+
+    def test_flush_ewouldblock(self):
+        self.start_to_connected()
+
+        # Create publish
+        publish_ticket = self.reactor.publish('topic',
+                                              b'payload',
+                                              0,
+                                              False)
+
+        publish_bytes = buffer_packet(publish_ticket.packet())
+        self.socket.send.side_effect = socket.error(errno.EWOULDBLOCK, 'would block')
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertTrue(self.reactor.want_write())
+        self.socket.send.reset_mock()
+
+        self.socket.send.return_value = len(publish_bytes)
+        self.socket.send.side_effect = None
+
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertTrue(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
+
+        self.reactor.terminate()
+
+    def test_flush_ssl_error(self):
+        self.start_to_connected()
+
+        # Create publish
+        publish_ticket = self.reactor.publish('topic',
+                                              b'payload',
+                                              0,
+                                              False)
+
+        publish_bytes = buffer_packet(publish_ticket.packet())
+        self.socket.send.side_effect = ssl.SSLError()
+        self.reactor.write()
+        self.socket.send.assert_called_once_with(publish_bytes)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+        self.assertTrue(isinstance(self.reactor.error, SslReactorError))
+        self.assertFalse(self.reactor.want_read())
+        self.assertFalse(self.reactor.want_write())
+        self.socket.send.reset_mock()
 
         self.reactor.terminate()
 
@@ -731,66 +827,6 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertEqual(self.reactor.state, ReactorState.error)
 
-    def test_publish_qos2_out_of_order_pubcomp(self):
-        publish0 = self.start_and_publish_qos2()
-
-        # on-the-wire
-        #
-        # C --MqttPublish(packet_id=0, topic='topic', payload=0x6f7574676f696e67, dupe=False, qos=2, retain=False)--> S
-        #
-        publish1 = MqttPublish(1, 'topic', b'outgoing', False, 2, False)
-        pub_status = MqttPublishTicket(1, publish1.topic, publish1.payload, publish1.qos, publish1.retain)
-        actual_publish = self.reactor.publish(publish1.topic,
-                                       publish1.payload,
-                                       publish1.qos,
-                                       publish1.retain)
-        # publish is queued
-        self.set_send_packet_side_effect(publish1)
-        self.assertTrue(self.reactor.want_write())
-        self.reactor.write()
-
-        # on-the-wire
-        #
-        # C --MqttPublish(packet_id=1, topic='topic', payload=0x6f7574676f696e67, dupe=False, qos=2, retain=False)--> S
-        #
-        self.socket.send.reset_mock()
-        self.assertFalse(self.reactor.want_write())
-        pub_status._set_status(MqttPublishStatus.pubrec)
-        self.assertEqual(pub_status, actual_publish)
-
-        pubrec0 = MqttPubrec(publish0.packet_id)
-        pubrel0 = MqttPubrel(publish0.packet_id)
-        self.set_send_packet_side_effect([pubrel0])
-        #
-        # on-the-wire
-        #
-        # C --MqttPublish(packet_id=1, topic='topic', payload=0x6f7574676f696e67, dupe=False, qos=2, retain=False)--> S
-        #
-        self.recv_packet_then_ewouldblock(pubrec0)
-        self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
-        self.assertTrue(self.reactor.want_write())
-        self.reactor.write()
-        self.socket.send.assert_called_once_with(buffer_packet(pubrel0))
-        self.socket.send.reset_mock()
-        self.assertEqual(self.reactor.state, ReactorState.started)
-
-        pubrec1 = MqttPubrec(publish1.packet_id)
-        pubrel1 = MqttPubrel(publish1.packet_id)
-        self.set_send_packet_side_effect([pubrel1])
-        self.recv_packet_then_ewouldblock(pubrec1)
-        self.reactor.write()
-        self.on_pubrec.assert_called_once(); self.on_pubrec.reset_mock()
-        self.socket.send.assert_called_once_with(buffer_packet(pubrel1))
-        self.socket.send.reset_mock()
-        self.assertEqual(self.reactor.state, ReactorState.started)
-
-        pubrec = MqttPubcomp(publish1.packet_id)
-        self.recv_packet_then_ewouldblock(pubrec)
-        self.on_pubrec.assert_not_called()
-        self.socket.send.assert_not_called()
-        self.socket.send.reset_mock()
-        self.assertEqual(self.reactor.state, ReactorState.error)
-
     def test_pubcomp_not_in_flightpublish_qos2_out_of_order_pubcomp(self):
         self.start_to_connected()
 
@@ -973,11 +1009,11 @@ class TestReceivePathQos1(TestReactor, unittest.TestCase):
 
         self.on_publish.assert_not_called()
         publish = MqttPublish(1, topics[0].name, b'incoming', False, topics[0].max_qos, False)
-        self.set_send_side_effect([len(buffer_packet(publish))])
+        puback = MqttPuback(publish.packet_id)
+        self.set_send_side_effect([len(buffer_packet(puback))])
         self.recv_packet_then_ewouldblock(publish)
         self.on_publish.assert_called_once()
 
-        puback = MqttPuback(publish.packet_id)
         self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(puback))
         self.socket.send.reset_mock()
@@ -994,11 +1030,11 @@ class TestReceivePathQos2(TestReactor, unittest.TestCase):
 
         self.on_publish.assert_not_called()
         publish = MqttPublish(1, topics[0].name, b'outgoing', False, topics[0].max_qos, False)
-        self.set_send_side_effect([len(buffer_packet(publish))])
+        pubrec = MqttPubrec(publish.packet_id)
+        self.set_send_side_effect([len(buffer_packet(pubrec))])
         self.recv_packet_then_ewouldblock(publish)
         self.on_publish.assert_called_once()
 
-        pubrec = MqttPubrec(publish.packet_id)
         self.reactor.write()
         self.socket.send.assert_called_once_with(buffer_packet(pubrec))
         self.socket.send.reset_mock()
@@ -1219,6 +1255,14 @@ class TestReactorStop(TestReactor, unittest.TestCase):
         self.start_to_handshake()
 
         # Stop should have immediate effect at this point.
+        self.reactor.stop()
+        self.assertEqual(ReactorState.stopped, self.reactor.state)
+
+    def test_handshake_enotconn(self):
+        self.start_to_handshake()
+
+        # ENOTCONN error forced on shutdown.
+        self.socket.shutdown.side_effect = socket.error(errno.ENOTCONN, 'not connected')
         self.reactor.stop()
         self.assertEqual(ReactorState.stopped, self.reactor.state)
 

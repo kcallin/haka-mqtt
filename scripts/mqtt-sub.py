@@ -18,15 +18,15 @@ class MqttSubClient(MqttPollClient):
         Tuple contains the hostname and port to connect to.
     topics: list of MqttTopic
     """
-    def __init__(self, endpoint, topics, clientid=None, keepalive_period=0):
+    def __init__(self, endpoint, topics, clientid=None, keepalive_period=0, ssl=False):
         properties = MqttPollClientProperties()
-        properties.ssl = True
+        properties.ssl = ssl
         properties.client_id = clientid
         properties.host, properties.port = endpoint
         properties.address_family = socket.AF_UNSPEC
         properties.keepalive_period = keepalive_period
-        properties.recv_idle_ping_period = keepalive_period
-        properties.recv_idle_abort_period = int(1.5 * keepalive_period)
+        properties.recv_idle_ping_period = 5*60*1000
+        properties.recv_idle_abort_period = 7*60*1000
 
         MqttPollClient.__init__(self, properties)
 
@@ -114,7 +114,9 @@ def create_parser():
     parser = ArgumentParser()
     parser.add_argument("hostname")
     parser.add_argument("port", type=int)
+    parser.add_argument("--ssl", type=bool, help="Enable SSL/TLS encryption.")
     parser.add_argument("--clientid", help="Unique client id to use to connect to server.")
+    parser.add_argument("--keepalive", type=int, default=5*60*1000, help="Ensures bytes are sent to server at least")
     parser.add_argument("-v", "--verbosity", action="count", default=0, help="increase output verbosity")
     parser.add_argument("--topic0", "--t0", action="append", default=[], help="Subscribe to topic with max QoS=0.")
     parser.add_argument("--topic1", "--t1", action="append", default=[], help="Subscribe to topic with max QoS=1.")
@@ -158,7 +160,10 @@ def main(args=sys.argv[1:]):
         topics = [MqttTopic('#', 0)]
 
     endpoint = (ns.hostname, ns.port)
-    client = MqttSubClient(endpoint, topics, clientid=ns.clientid, keepalive_period=ns.keepalive)
+    client = MqttSubClient(endpoint, topics,
+                           clientid=ns.clientid,
+                           keepalive_period=ns.keepalive,
+                           ssl=ns.ssl)
     client.start()
 
     while client.state in ACTIVE_STATES:

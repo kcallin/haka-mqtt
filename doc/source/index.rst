@@ -62,6 +62,7 @@ Table of Contents
 
    user_guide
    haka_mqtt
+   changelog
    dev_guide
    release_procedure
 

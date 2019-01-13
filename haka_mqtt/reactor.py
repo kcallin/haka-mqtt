@@ -70,8 +70,8 @@ class ReactorProperties(object):
         a ``MqttPingreq`` packet to the server after this many seconds
         without sending and data over the socket.  The server will
         disconnect the client as if there has been a network error after
-        1.5x``self.keepalive`` seconds without receiving any bytes
-        [MQTT-3.1.2-24].
+        1.5x``self.keepalive_period`` seconds without receiving any
+        bytes [MQTT-3.1.2-24].
     recv_idle_ping_period: int
         0 < recv_idle_ping_period; sends a ``MqttPingreq`` packet to
         the server after this many seconds without receiving and bytes

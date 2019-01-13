@@ -85,13 +85,37 @@ class MqttPollClientProperties(object):
     """
     Attributes
     ----------
-    client_id: str optional
-        The MQTT client id to pass to the MQTT server.  A client id will
-        be randomly generated based on .
+    client_id: str or None
+        The MQTT client id to pass to the MQTT server.  If `None` then
+        a client-id will be generated with A client id will be randomly
+        generated based on :meth:`generate_client_id`.
     address_family: int
         Address family; one of the socket.AF_* constants (eg.
-        socket.AF_UNSPEC for any family, socket.AF_INET for IP4
-        socket.AF_INET6 for IP6).
+        :data:`socket.AF_UNSPEC` for any family, :data:`socket.AF_INET`
+        for IP4 :data:`socket.AF_INET6` for IP6).  By default this will
+        be :data:`socket.AF_UNSPEC`.
+    host: str
+        IP address or host name.
+    port: int
+        Integer such that 0 <= port <= 2**16-1.
+    keepalive_period: str
+        0 <= keepalive_period <= 2*16-1; zero disables keepalive.  Sends
+        a ``MqttPingreq`` packet to the server after this many seconds
+        without sending and data over the socket.  The server will
+        disconnect the client as if there has been a network error after
+        1.5x``self.keepalive_period`` seconds without receiving any bytes
+        [MQTT-3.1.2-24].
+    recv_idle_ping_period: int
+        0 < recv_idle_ping_period; sends a ``MqttPingreq`` packet to
+        the server after this many seconds without receiving and bytes
+        on the socket.
+    recv_idle_abort_period: int
+        0 < recv_idle_abort_period; aborts connection after this time
+        without receiving any bytes from remote (typically set to 1.5x
+        ``self.recv_idle_ping_period``).
+    ssl: bool
+        When `True` connects to server using a default SSL socket
+        context created with :func:`ssl.create_default_context`.
     """
     def __init__(self):
         self.host = None

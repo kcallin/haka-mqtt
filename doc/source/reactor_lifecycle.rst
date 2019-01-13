@@ -131,7 +131,7 @@ A :meth:`haka_mqtt.reactor.Reactor.terminate` call prompty closes all haka-mqtt 
 places the reactor into a ``stopped`` state.  All schedule deadlines are
 promptly cancelled.  All socket resources are promptly closed.  Any
 asynchronous hostname lookups are cancelled.  "Prompt" in this case
-means before the ``terminate`` call has returned.
+means before the ``terminate`` call returns.
 
 
 .. graphviz::

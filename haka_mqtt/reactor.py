@@ -1661,8 +1661,10 @@ class Reactor(object):
             raise NotImplementedError(self.sock_state)
 
     def __launch_packets(self):
-        """Places packets from the preflight queue on the inflight
-        queue as required to provide bytes to the write buffer.
+        """Transfer as many bytes as possible to the network subsystem.
+        If bytes from a packet are successfully placed on-the-wire then
+        that packet will be considered "in-flight".  This method will
+        make exactly one call to send.
 
         Returns
         -------

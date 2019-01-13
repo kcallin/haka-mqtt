@@ -1,6 +1,6 @@
-=====================
-haka_mqtt Change Log
-=====================
+===========
+Change Log
+===========
 
 
 0.3.2 (2019-01-13)
@@ -26,9 +26,9 @@ New
 
 Fix
 ----
-#17: Keepalive scheduled while pingreq already active.
+#17: Connect fail after DNS lookup fails to enter error state.
 
-     After a DNS lookup succeds but the subsequent socket connect fails
+     After a DNS lookup succeeds but the subsequent socket connect fails
      core reactor may not enter the error state.
 
      https://github.com/kcallin/haka-mqtt/issues/17

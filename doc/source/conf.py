@@ -48,12 +48,13 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.graphviz',
     'sphinxcontrib.plantuml',
+    'sphinx.ext.intersphinx',
 ]
 
 # plantuml = 'java -jar /path/to/plantuml.jar'
 # plantuml = '/usr/bin/plantuml'
 
-seqdiag_fontpath = '/usr/share/fonts/liberation/LiberationSerif-Regular.ttf'
+intersphinx_mapping = {'python': ('https://docs.python.org/2.7', None)}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

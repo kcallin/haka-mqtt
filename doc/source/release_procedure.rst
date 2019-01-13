@@ -24,11 +24,11 @@ Verify that version and release numbers in ``doc/source/conf.py`` match
     release = u'1.0.0'
     $
 
-Ensure there are no old build artifacts.
+Clean build directory and ensure there are no old build artifacts.
 
 .. code-block:: none
 
-    $ rm dist/*
+    $ rm -rf dist build haka_mqtt.egg-info htmlcov
     $ ls dist
     $
 

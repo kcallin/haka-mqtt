@@ -23,7 +23,7 @@ Standard Python `logging` Module
 By default `haka-mqtt` logs details of operational events to `haka` log
 through the standard Python logging framework.  If a `str` is provided
 to the core :class:`haka_mqtt.reactor.Reactor` log parameter then logs
-will to written to the logger by that name instead.
+will be written to the logger by that name instead.
 
 
 Custom Logging

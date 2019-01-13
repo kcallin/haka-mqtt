@@ -1,3 +1,15 @@
+0.3.2 (2019-01-13)
+===================
+
+Fix
+----
+#21: haka_mqtt/frontends/poll.py not included in build
+
+     The polling frontend was mistakenly left out of the pypi package.
+
+     https://github.com/kcallin/haka-mqtt/issues/21
+
+
 0.3.1 (2018-12-30)
 ===================
 

@@ -1,3 +1,9 @@
+"""The reactor module provides an MQTT reactor class suitable for use
+with :mod:`select` and select-like interfaces like epoll.  An adapter is
+available to make it conveniently usable in a poll environment
+(:mod:`haka_mqtt.frontends.poll`).
+"""
+
 import errno
 import socket
 import logging

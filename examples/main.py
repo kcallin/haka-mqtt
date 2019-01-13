@@ -5,6 +5,7 @@ import sys
 from argparse import ArgumentParser, ArgumentTypeError
 
 from haka_mqtt.frontends.poll import MqttPollClientProperties, MqttPollClient
+from haka_mqtt.reactor import ReactorState
 from mqtt_codec.packet import MqttTopic
 
 TOPIC = 'bubbles'
@@ -165,7 +166,7 @@ def main(args=sys.argv[1:]):
     client = ExampleMqttClient(ns.endpoint)
     client.start()
 
-    while True:
+    while client.state not in (ReactorState.error, ReactorState.stopped):
         client.poll(5.)
 
 

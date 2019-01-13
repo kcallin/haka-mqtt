@@ -58,6 +58,14 @@ haka\_mqtt.reactor module
     :undoc-members:
     :show-inheritance:
 
+haka\_mqtt.frontends.poll module
+--------------------------------
+
+.. automodule:: haka_mqtt.frontends.poll
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 haka\_mqtt.scheduler module
 ---------------------------
 

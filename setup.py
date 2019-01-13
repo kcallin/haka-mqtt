@@ -36,7 +36,7 @@ project_dir = abspath(dirname(__file__))
 chdir(project_dir)
 setup(
     name="haka-mqtt",
-    version="0.3.1",
+    version="0.3.2",
     # Want to specify opt-in versions but found that when using
     # pip 9.0.3 (who knows what other versions), the comma seems to
     # prevent any part of the string from being recognized.
@@ -47,7 +47,7 @@ setup(
     install_requires=install_requires,
     tests_require=['mock'],
     use_2to3=True,
-    packages=['haka_mqtt'],
+    packages=['haka_mqtt', 'haka_mqtt.frontends'],
     scripts=glob("scripts/*.py"),
     test_suite="tests",
     author="Keegan Callin",

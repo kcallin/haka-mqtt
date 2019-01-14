@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath('../..'))
 # -- Project information -----------------------------------------------------
 
 project = u'Haka MQTT'
-copyright = u'2018, Keegan Callin'
+copyright = u'2018 - 2019, Keegan Callin'
 author = u'Keegan Callin'
 
 # The short X.Y version

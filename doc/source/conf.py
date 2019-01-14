@@ -54,7 +54,10 @@ extensions = [
 # plantuml = 'java -jar /path/to/plantuml.jar'
 # plantuml = '/usr/bin/plantuml'
 
-intersphinx_mapping = {'python': ('https://docs.python.org/2.7', None)}
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/2.7', None),
+    'mqtt_codec': ('https://mqtt-codec.readthedocs.io/en/latest', None)
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

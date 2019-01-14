@@ -67,15 +67,16 @@ class ReactorProperties(object):
         constrainted such that 0 <= `port` <= 2**16-1.
     keepalive_period: int
         0 <= keepalive_period <= 2*16-1; zero disables keepalive.  Sends
-        a ``MqttPingreq`` packet to the server after this many seconds
-        without sending and data over the socket.  The server will
-        disconnect the client as if there has been a network error after
-        1.5x``self.keepalive_period`` seconds without receiving any
-        bytes [MQTT-3.1.2-24].
+        a :class:`mqtt_codec.packet.MqttPingreq` packet to the server
+        after this many seconds without sending and data over the
+        socket.  The server will disconnect the client as if there has
+        been a network error after 1.5x``self.keepalive_period`` seconds
+        without receiving any bytes [MQTT-3.1.2-24].
     recv_idle_ping_period: int
-        0 < recv_idle_ping_period; sends a ``MqttPingreq`` packet to
-        the server after this many seconds without receiving and bytes
-        on the socket.
+        0 < recv_idle_ping_period; sends a
+        :class:`mqtt_codec.packet.MqttPingreq` packet to the server
+        after this many seconds without receiving and bytes on the
+        socket.
     recv_idle_abort_period: int
         0 < recv_idle_abort_period; aborts connection after this time
         without receiving any bytes from remote (typically set to 1.5x
@@ -87,9 +88,9 @@ class ReactorProperties(object):
         re-connect.
     address_family: int
         Address family; one of the socket.AF_* constants (eg.
-        `socket.AF_UNSPEC` for any family, `socket.AF_INET` for IP4
-        `socket.AF_INET6` for IP6).  Set to `socket.AF_UNSPEC` by
-        default.
+        :data:`socket.AF_UNSPEC` for any family, :data:`socket.AF_INET`
+        for IP4 :data:`socket.AF_INET6` for IP6).  Set to
+        :data:`socket.AF_UNSPEC` by default.
     username: str optional
     password: str optional
     """
@@ -546,7 +547,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        connack: MqttConnack
+        connack: :class:`mqtt_codec.packet.MqttConnack`
         """
         pass
 
@@ -558,7 +559,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        pubrec: MqttPubrec
+        pubrec: :class:`mqtt_codec.packet.MqttPubrec`
         """
         pass
 
@@ -569,7 +570,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        pubcomp: MqttPubcomp
+        pubcomp: :class:`mqtt_codec.packet.MqttPubcomp`
         """
         pass
 
@@ -580,7 +581,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        puback: MqttPuback
+        puback: :class:`mqtt_codec.packet.MqttPuback`
         """
         pass
 
@@ -592,7 +593,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        suback: MqttSuback
+        suback: :class:`mqtt_codec.packet.MqttSuback`
         """
         pass
 
@@ -603,7 +604,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        unsuback: MqttUnsuback
+        unsuback: :class:`mqtt_codec.packet.MqttUnsuback`
         """
         pass
 
@@ -616,7 +617,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        publish: MqttPublish
+        publish: :class:`mqtt_codec.packet.MqttPublish`
         """
         pass
 
@@ -627,7 +628,7 @@ class Reactor(object):
         Parameters
         ----------
         reactor: Reactor
-        pubrel: MqttPubrel
+        pubrel: :class:`mqtt_codec.packet.MqttPubrel`
         """
         pass
 
@@ -670,9 +671,10 @@ class Reactor(object):
     @property
     def recv_idle_ping_period(self):
         """int: 0 <= ``self.recv_idle_ping_period``; sends a
-        ``MqttPingreq`` packet to the server after this many seconds
-        without receiving and bytes on the socket.  If zero then ping
-        messages are not sent when receive stream is idle."""
+        :class:`mqtt_codec.packet.MqttPingreq` packet to the server after
+        this many seconds without receiving and bytes on the socket.  If
+        zero then ping messages are not sent when receive stream is
+        idle."""
         return self.__recv_idle_ping_period
 
     @property
@@ -699,7 +701,7 @@ class Reactor(object):
 
     @property
     def will(self):
-        """mqtt_codec.packet.MqttWill or None: Last will and testament."""
+        """:class:`mqtt_codec.packet.MqttWill` or ``None``: Last will and testament."""
         return self.__will
 
     @will.setter
@@ -1423,7 +1425,7 @@ class Reactor(object):
 
         Parameters
         ----------
-        publish: MqttPublish
+        publish: :class:`mqtt_codec.packet.MqttPublish`
         """
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(publish)
@@ -1638,7 +1640,7 @@ class Reactor(object):
 
         Parameters
         ----------
-        pingresp: MqttPingresp
+        pingresp: :class:`mqtt_codec.packet.MqttPingresp`
         """
         if self.mqtt_state is MqttState.connack:
             self.__abort_early_packet(pingresp)

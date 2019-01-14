@@ -100,7 +100,7 @@ GPG signatures are created for test release artifacts.
 
 .. code-block:: none
 
-    $ gpg --detach-sign -a dist/haka-mqtt-0.1.2.tar.gz
+    $ gpg2 --detach-sign -a dist/*
 
     You need a passphrase to unlock the secret key for
     user: "Keegan Callin <kc@kcallin.net>"
@@ -109,7 +109,7 @@ GPG signatures are created for test release artifacts.
     gpg: gpg-agent is not available in this session
     $ ls dist
     haka-mqtt-0.1.2.tar.gz  haka-mqtt-0.1.2.tar.gz.asc
-    $ gpg --verify dist/haka-mqtt-0.1.2.tar.gz.asc
+    $ gpg2 --verify dist/*.asc
     gpg: assuming signed data in `dist/haka-mqtt-0.1.2.tar.gz'
     gpg: Signature made Sat 01 Sep 2018 11:00:31 AM MDT using RSA key ID DD53792F
     gpg: Good signature from "Keegan Callin <kc@kcallin.net>" [ultimate]
@@ -190,7 +190,7 @@ Remove test artifacts:
 
 .. code-block:: bash
 
-    $ rm dist/*
+    $ rm -rf dist build haka_mqtt.egg-info htmlcov
     $ ls dist
     $
 
@@ -226,7 +226,7 @@ GPG sign official release artifact:
 
 .. code-block:: none
 
-    $ gpg --detach-sign -a dist/haka-mqtt-0.1.2.tar.gz
+    $ gpg2 --detach-sign -a dist/*
 
     You need a passphrase to unlock the secret key for
     user: "Keegan Callin <kc@kcallin.net>"
@@ -235,7 +235,7 @@ GPG sign official release artifact:
     gpg: gpg-agent is not available in this session
     $ ls dist
     haka-mqtt-0.1.2.tar.gz  haka-mqtt-0.1.2.tar.gz.asc
-    $ gpg --verify dist/haka-mqtt-0.1.2.tar.gz.asc
+    $ gpg2 --verify dist/*.asc
     gpg: assuming signed data in `dist/haka-mqtt-0.1.2.tar.gz'
     gpg: Signature made Sat 01 Sep 2018 11:00:31 AM MDT using RSA key ID DD53792F
     gpg: Good signature from "Keegan Callin <kc@kcallin.net>" [ultimate]

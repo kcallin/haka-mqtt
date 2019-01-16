@@ -181,7 +181,10 @@ class MqttPollClient(Reactor):
 
 
 class BlockingMqttClient(Reactor):
-    """
+    """A client that employs socket.settimeout to use blocking
+    operations on sockets.  Although in general the socket timeout is
+    respected by the operating system, this method uses a synchronous
+    DNS lookup and this lookup does not have any timeout.
 
     Parameters
     ----------

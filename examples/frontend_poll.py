@@ -3,6 +3,7 @@
 A loopback client that subscribes to a topic that it publishes to.
 Every time a message is published it should be echoed back to the
 client by the remote MQTT broker.
+
 """
 
 from __future__ import print_function
@@ -22,16 +23,15 @@ from mqtt_codec.packet import (
     MqttPublish,
     MqttPuback,
 )
-from haka_mqtt.frontends.event_queue import MqttEventQueue
+from haka_mqtt.frontends.event_queue import MqttEventEnqueue
 from haka_mqtt.frontends.poll import MqttPollClientProperties, MqttPollClient
 
-# Your Imports (if any)
+
+class UnexpectedMqttEvent(Exception):
+    pass
 
 
-# Your software.
-
-
-class ExampleMqttClient(MqttEventQueue, MqttPollClient):
+class ExampleMqttClient(MqttEventEnqueue, MqttPollClient):
     def __init__(self, endpoint):
         properties = MqttPollClientProperties()
         properties.keepalive_period = 100
@@ -41,16 +41,17 @@ class ExampleMqttClient(MqttEventQueue, MqttPollClient):
 
         self.__q = Queue()
         MqttPollClient.__init__(self, properties)
-        MqttEventQueue.__init__(self, self.__q)
+        MqttEventEnqueue.__init__(self, self.__q)
 
     def poll_until_event(self, timeout=None):
-        """
+        """Polls connection until an event occurs or timeout expires.
+        If
 
         Parameters
         ----------
         timeout: float or None
             Maximum amount of time to wait for an event.  If None then
-            waits forever.
+            waits forever.  Must satisfy condition ``timeout >= 0``.
 
         Returns
         -------
@@ -59,8 +60,11 @@ class ExampleMqttClient(MqttEventQueue, MqttPollClient):
         """
         if timeout is None:
             poll_end_time = None
-        else:
+        elif timeout >= 0:
             poll_end_time = self._clock.time() + timeout
+        else:
+            assert timeout < 0
+            raise ValueError(timeout)
 
         e = None
         while poll_end_time is None or self._clock.time() < poll_end_time:
@@ -84,21 +88,26 @@ class ExampleMqttClient(MqttEventQueue, MqttPollClient):
 
         return e
 
-    def expect_event(self, matcher, timeout=None):
-        """Waits for an event and returns it if ``matcher(event)``
-        returns ``True``; otherwise raises an exception.  If `timeout`
-        expires before any event is received then returns `None`.
+    def expect_event(self, predicate, timeout=None):
+        """Waits any event to occur and returns it if
+        ``predicate(event)`` returns ``True``; otherwise raises an
+        exception.  If `timeout` expires before any event is received
+        then returns `None`.
 
         Parameters
         ----------
+        predicate: callable
+            A callable that will be passed a single argument that will
+            be of type :class:`mqtt_codec.packet.MqttPacketBody` or
+            :class:`haka_mqtt.frontends.evqueue.MqttConnectionEvent`.
         timeout: float or None
             Maximum amount of time to wait for an event.  If None then
             waits forever.
 
         Raises
         ------
-        NotImplementedError
-            When an event occurs for which matcher(event) returns False.
+        UnexpectedMqttEvent
+            The first even that occurs ``matcher(event)`` returns False.
 
         Returns
         -------
@@ -110,14 +119,17 @@ class ExampleMqttClient(MqttEventQueue, MqttPollClient):
             e = self.poll_until_event(timeout=timeout)
             if e is None:
                 return None
-            elif matcher(e):
+            elif predicate(e):
                 return e
             else:
                 raise NotImplementedError(e)
 
 
 def argparse_endpoint(s):
-    """
+    """Splits an incoming string into host and port components.
+
+    >>> argparse_endpoint('localhost:1883')
+    ('localhost', 1883)
 
     Parameters
     ----------
@@ -144,7 +156,8 @@ def argparse_endpoint(s):
 
 
 def create_parser():
-    """
+    """Creates a command-line argument parser used by the program main
+    method.
 
     Returns
     -------
@@ -156,27 +169,7 @@ def create_parser():
     return parser
 
 
-def main(args=sys.argv[1:]):
-    logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
-
-    #
-    # 1883 : MQTT, unencrypted
-    # 8883 : MQTT, encrypted
-    # 8884 : MQTT, encrypted, client certificate required
-    # 8080 : MQTT over WebSockets, unencrypted
-    # 8081 : MQTT over WebSockets, encrypted
-    #
-    # from https://test.mosquitto.org/ (2018-09-19)
-    #
-
-    # addr = ('2001:41d0:a:3a10::1', 8883, 0, 0)
-    # sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-    # sock.connect(addr)
-
-    parser = create_parser()
-    ns = parser.parse_args(args)
-
-    client = ExampleMqttClient(ns.endpoint)
+def run(client):
     client.start()
 
     topic = client.client_id
@@ -202,6 +195,22 @@ def main(args=sys.argv[1:]):
         seq_num += 1
 
         client.poll(1)
+
+
+def main(args=sys.argv[1:]):
+    """Parses arguments and passes them to :func:`run` method."""
+    logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
+
+    parser = create_parser()
+    ns = parser.parse_args(args)
+
+    try:
+        rc = run(ExampleMqttClient(ns.endpoint))
+    except Exception as e:
+        logging.critical('Panicked because of exception.', exc_info=True)
+        rc = 1
+
+    return rc
 
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@ best to use the core reactor directly.
    quickstart
    core
    frontend
+   examples
    build_doc
    semver
    requirements

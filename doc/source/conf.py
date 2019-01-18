@@ -47,8 +47,9 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'sphinx.ext.graphviz',
-    'sphinxcontrib.plantuml',
     'sphinx.ext.intersphinx',
+    'sphinxcontrib.plantuml',
+    'sphinxcontrib.blockdiag'
 ]
 
 # plantuml = 'java -jar /path/to/plantuml.jar'
@@ -58,6 +59,9 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/2.7', None),
     'mqtt_codec': ('https://mqtt-codec.readthedocs.io/en/latest', None)
 }
+
+# Fontpath for blockdiag (truetype font)
+# blockdiag_fontpath = '/usr/share/fonts/truetype/ipafont/ipagp.ttf'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

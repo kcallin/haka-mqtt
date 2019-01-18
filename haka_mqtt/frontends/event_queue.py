@@ -7,8 +7,17 @@ class MqttConnectionEvent(IntEnum):
     connect_fail = 1
 
 
-class MqttEventQueue():
+class MqttEventEnqueue():
     def __init__(self, q):
+        """
+
+        Parameters
+        ----------
+        q: Queue.Queue
+        """
+        if not hasattr(q, 'put') or not callable(q.put):
+            raise TypeError(q)
+
         self.__q = q
 
     # Connection Callbacks

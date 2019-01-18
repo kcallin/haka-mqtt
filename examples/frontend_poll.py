@@ -135,6 +135,13 @@ def argparse_endpoint(s):
     ----------
     s: str
 
+    Raises
+    -------
+    ArgumentTypeError
+        Raised when port number is out of range 1 <= port <= 65535, when
+        port is not an integer, or when there is more than one colon in
+        the string.
+
     Returns
     -------
     (str, int)

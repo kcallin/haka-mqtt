@@ -696,7 +696,7 @@ class Reactor(object):
 
     @property
     def sock_state(self):
-        """MqttState: Current state of mqtt protocol handshake."""
+        """SocketState: Current state of the socket connection."""
         return self.__sock_state
 
     @property
@@ -1019,9 +1019,9 @@ class Reactor(object):
         assert future.done()
 
         if not future.cancelled():
-            results = future.result()
+            results = future.result(timeout=0)
             if results is None:
-                e = future.exception()
+                e = future.exception(timeout=0)
                 self.__log.error('%s (errno=%d).  Aborting.', e.strerror, e.errno)
                 self.__abort(AddressReactorError(e))
             else:

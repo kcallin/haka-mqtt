@@ -1,4 +1,4 @@
-import atexit
+import errno
 import fcntl
 import os
 import socket
@@ -51,9 +51,15 @@ class _Future(object):
         return self.__done
 
     def result(self, timeout=None):
+        if timeout != 0:
+            raise NotImplementedError('Blocking, waiting for results is not implemented.  timeout must be zero.')
+
         return self.__result
 
     def exception(self, timeout=None):
+        if timeout != 0:
+            raise NotImplementedError('Blocking, waiting for results is not implemented.  timeout must be zero.')
+
         return self.__exception
 
     def add_done_callback(self, fn):
@@ -67,7 +73,9 @@ _Poison = object()
 
 
 def _worker_task(work_queue, wd, done_queue):
-    """
+    """Listens for tasks on work_queue, completes them, then places the
+    completed tasks on the done_queue.
+
     Parameters
     ----------
     work_queue: Queue
@@ -94,8 +102,62 @@ def _worker_task(work_queue, wd, done_queue):
 
 
 class AsyncFutureDnsResolver(object):
-    """This class is not thread safe; it must be accessed from one
-    thread only.
+    """An executor that spawns a small thread pool for performing DNS
+    lookups.  DNS lookup task sare submitted by using calling this
+    object as a function and those tasks will be completed
+    asynchronously by threads in a thread pool.  The completed tasks
+    are posted back to an internal queue and the :meth:`poll` method
+    gets the completed tasks from the queue and notifies their
+    subscribers of completion.  Tasks with done callback methods will
+    be called by poll on the same threat that poll is called on.
+
+    >>> resolver = AsyncFutureDnsResolver()
+    >>>
+    >>> lookup_result = None
+    >>>
+    >>> def lookup_finished(future):
+    ...   global lookup_result
+    ...   lookup_result = future.result()
+    ...
+    >>> future = resolver('localhost', 80)
+    >>> future.add_done_callback(lookup_finished)
+    >>>
+    >>> while not future.done():
+    ...   # Calling poll services callbacks and sets future to done.
+    ...   resolver.poll()
+    ...   sleep(0.1)
+    ...
+    >>> assert future.done()
+    >>>
+    >>> # Only timeout=0 presently supported.
+    >>> assert not future.exception(timout=0)
+    >>> assert not future.cancelled()
+    >>> # future.result(0) contains outcome of asynchronous call
+    >>> # to socket.getaddrinfo.  Note that at this time only timeout=0
+    >>> # is supported by this limited api.
+
+    .. aafig::
+
+                                 |                      Worker Threads
+                                 |                      +------------+
+                                 |                  +-->| Worker 0   |-->+
+                                 |                  |   +------------+   |
+                                 |                  |                    |
+                                 |                  |   +------------+   |
+                                 |                  +-->| Worker 1   |-->+
+                                 |                  |   +------------+   |
+                                 |                  |                    |
+                                 |                  |   +------------+   |
+      resolver('google.com', 80) |--> task queue----+-->| Worker ... |-->+
+                                 |                  |   +------------+   |
+                                 |                  |                    |
+          AsyncFutureDnsResolver |                  |   +------------+   |
+                          Thread |                  +-->| Worker n   |-->+
+                                 |                      +------------+   |
+                                 |                                       |
+                                 |                                       |
+                resolver.poll()  |<-- completion queue<------------------+
+                                 |
     """
     def __init__(self, thread_pool_size=1):
         self.__closed = False
@@ -196,10 +258,22 @@ class AsyncFutureDnsResolver(object):
         return self.__rd
 
     def poll(self):
-        if os.read(self.__rd, 1):
-            try:
-                future = self.__done_queue.get_nowait()
-            except Empty:
+        """Calls done callbacks of any newly completed futures."""
+        try:
+            rc = os.read(self.__rd, 1)
+        except OSError as e:
+            if e.errno is errno.EAGAIN:
+                # No data available in pipe.
                 pass
             else:
-                future._notify()
+                # Unknown error; crash!
+                raise
+        else:
+            if rc:
+                # A byte was read.
+                try:
+                    future = self.__done_queue.get_nowait()
+                except Empty:
+                    pass
+                else:
+                    future._notify()

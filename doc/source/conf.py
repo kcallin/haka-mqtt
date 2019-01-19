@@ -48,6 +48,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.graphviz',
     'sphinx.ext.intersphinx',
+    'aafigure.sphinxext',
     'sphinxcontrib.plantuml',
     'sphinxcontrib.blockdiag'
 ]

@@ -27,11 +27,31 @@ from haka_mqtt.frontends.event_queue import MqttEventEnqueue
 from haka_mqtt.frontends.poll import MqttPollClientProperties, MqttPollClient
 
 
-class UnexpectedMqttEvent(Exception):
-    pass
+class UnexpectedMqttEventError(Exception):
+    def __init__(self, e):
+        """Raised when an unexpected MQTT event occurs.
+
+        Parameters
+        ----------
+        e: mqtt_codec.packet.MqttPacketBody or haka_mqtt.frontends.event_queue.MqttConnectionEvent
+        """
+        self.event = e
+
+    def __str__(self):
+        return repr(self)
+
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, repr(self.event))
 
 
 class ExampleMqttClient(MqttEventEnqueue, MqttPollClient):
+    """A helper class for polling mqtt events.
+
+    It is critical that the order of inheritance is correct for this
+    class to work correctly.  The :class:`MqttEventEnqueue` class *must* appear
+    before :class:`MqttPollClient` so that its methods are called first.
+
+    """
     def __init__(self, endpoint):
         properties = MqttPollClientProperties()
         properties.keepalive_period = 100
@@ -44,8 +64,8 @@ class ExampleMqttClient(MqttEventEnqueue, MqttPollClient):
         MqttEventEnqueue.__init__(self, self.__q)
 
     def poll_until_event(self, timeout=None):
-        """Polls connection until an event occurs or timeout expires.
-        If
+        """Polls connection until an event occurs then returns it.  If
+        timeout passes without an event occurring returns None.
 
         Parameters
         ----------
@@ -55,7 +75,7 @@ class ExampleMqttClient(MqttEventEnqueue, MqttPollClient):
 
         Returns
         -------
-        MqttPacketBody or MqttConnectionEvent or None
+        mqtt_codec.packet.MqttPacketBody or MqttConnectionEvent or None
             None is returned if no event occurs.
         """
         if timeout is None:
@@ -99,30 +119,28 @@ class ExampleMqttClient(MqttEventEnqueue, MqttPollClient):
         predicate: callable
             A callable that will be passed a single argument that will
             be of type :class:`mqtt_codec.packet.MqttPacketBody` or
-            :class:`haka_mqtt.frontends.evqueue.MqttConnectionEvent`.
+            :class:`haka_mqtt.frontends.event_queue.MqttConnectionEvent`.
         timeout: float or None
             Maximum amount of time to wait for an event.  If None then
             waits forever.
 
         Raises
         ------
-        UnexpectedMqttEvent
-            The first even that occurs ``matcher(event)`` returns False.
+        UnexpectedMqttEventError
+            The first even that occurs ``predicate(event)`` returns False.
 
         Returns
         -------
-        mqtt_codec.packet.MqttPacketBody or MqttConnectionEvent or None
-            Returns an event matching matcher(e) or None if no such
+        mqtt_codec.packet.MqttPacketBody or haka_mqtt.frontends.event_queue.MqttConnectionEvent or None
+            Returns an event matching predicate(e) or None if no such
             event occurred before timeout.
         """
         while True:
             e = self.poll_until_event(timeout=timeout)
-            if e is None:
-                return None
-            elif predicate(e):
+            if e is None or predicate(e):
                 return e
             else:
-                raise NotImplementedError(e)
+                raise UnexpectedMqttEventError(e)
 
 
 def argparse_endpoint(s):
@@ -177,6 +195,15 @@ def create_parser():
 
 
 def run(client):
+    """
+    Raises
+    -------
+    UnexpectedMqttEventError
+
+    Parameters
+    ----------
+    client: ExampleMqttClient
+    """
     client.start()
 
     topic = client.client_id
@@ -184,9 +211,11 @@ def run(client):
     subscribe = client.subscribe([MqttTopic(topic, 1)])
     client.expect_event(lambda e: e == MqttSuback(subscribe.packet_id, [SubscribeResult.qos1]))
 
+    UTF8 = 'utf-8'
+
     seq_num = 0
     while True:
-        payload = str(seq_num).encode('utf-8')
+        payload = str(seq_num).encode(UTF8)
         publish = client.publish(topic, payload, 1)
         e = client.poll_until_event()
 
@@ -198,26 +227,30 @@ def run(client):
         elif e == MqttPuback(publish.packet_id):
             client.expect_event(lambda e: isinstance(e, MqttPublish) and e.payload == payload)
         else:
-            raise NotImplemented(e)
+            raise UnexpectedMqttEventError(e)
         seq_num += 1
 
         client.poll(1)
 
 
 def main(args=sys.argv[1:]):
-    """Parses arguments and passes them to :func:`run` method."""
+    """Parses arguments and passes them to :func:`run` method.  Returns
+    one when an error occurs.
+
+    Returns
+    --------
+    int
+    """
     logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
 
     parser = create_parser()
     ns = parser.parse_args(args)
 
     try:
-        rc = run(ExampleMqttClient(ns.endpoint))
+        run(ExampleMqttClient(ns.endpoint))
     except Exception as e:
         logging.critical('Panicked because of exception.', exc_info=True)
-        rc = 1
-
-    return rc
+        return 1
 
 
 if __name__ == '__main__':

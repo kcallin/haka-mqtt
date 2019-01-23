@@ -130,7 +130,7 @@ class AsyncFutureDnsResolver(object):
     >>> assert future.done()
     >>>
     >>> # Only timeout=0 presently supported.
-    >>> assert not future.exception(timout=0)
+    >>> assert not future.exception(timeout=0)
     >>> assert not future.cancelled()
     >>> # future.result(0) contains outcome of asynchronous call
     >>> # to socket.getaddrinfo.  Note that at this time only timeout=0

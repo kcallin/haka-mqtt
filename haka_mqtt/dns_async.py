@@ -92,7 +92,7 @@ def _worker_task(work_queue, wd, done_queue):
             done_queue.put(future)
 
             while True:
-                num_bytes_written = os.write(wd, 'x')
+                num_bytes_written = os.write(wd, b'x')
                 if num_bytes_written == 1:
                     break
                 elif num_bytes_written == 0:

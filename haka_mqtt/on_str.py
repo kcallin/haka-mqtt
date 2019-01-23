@@ -8,7 +8,7 @@ class HexOnStr(object):
 
     def __str__(self):
         if self.__str is None:
-            self.__str = b2a_hex(self.__buf)
+            self.__str = b2a_hex(self.__buf).decode('utf-8')
 
         return self.__str
 

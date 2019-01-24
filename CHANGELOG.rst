@@ -3,6 +3,26 @@ Change Log
 ===========
 
 
+0.3.3 (2019-01-xx)
+===================
+
+Fix
+----
+#22: On p3k DNS async resolver does not pass bytes to write.
+
+     On Python 3 the DNS async resolver passes str instead of bytes to
+     an os.write call.  This results in a TypeError and crash.
+
+     https://github.com/kcallin/haka-mqtt/issues/22
+
+#24: On p3k HexOnStr __str__ method fails to return a str.
+
+     On Python 3 str(HexOnStr) fails to return str and this results in
+     a TypeError.
+
+     https://github.com/kcallin/haka-mqtt/issues/24
+
+
 0.3.2 (2019-01-13)
 ===================
 

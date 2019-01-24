@@ -21,6 +21,28 @@ def read_path(filename):
 # https://www.python.org/dev/peps/pep-0440/
 
 
+
+# As originall seen at: https://pypi.org/project/futures/
+#
+# To conditionally require this library only on Python 2, you can do this in your setup.py:
+#
+# setup(
+#     ...
+#     extras_require={
+#         ':python_version == "2.7"': ['futures']
+#     }
+# )
+#
+# Or, using the newer syntax:
+#
+# setup(
+#     ...
+#     install_requires={
+#         'futures; python_version == "2.7"'
+#     }
+# )
+
+
 py_version = (sys.version_info.major, sys.version_info.minor)
 install_requires = [
     # Syntax introduced sometime between setuptools-32.1.0 and setuptools-36.7.0
@@ -28,8 +50,6 @@ install_requires = [
     # https://stackoverflow.com/questions/21082091/install-requires-based-on-python-version
     'mqtt-codec~=1.0',
 ]
-if py_version < (3, 4):
-    install_requires.append('enum34>=1.1.6')
 
 
 project_dir = abspath(dirname(__file__))
@@ -45,6 +65,9 @@ setup(
     #
     python_requires='>=2.7',
     install_requires=install_requires,
+    extras_require={
+        ':python_version < "3.4"': ['enum34>=1.1.6']
+    },
     tests_require=['mock'],
     use_2to3=True,
     packages=['haka_mqtt', 'haka_mqtt.frontends'],

@@ -1342,6 +1342,9 @@ class Reactor(object):
                 else:
                     self.__log.error("SSLError while reading socket; %s.", ReprOnStr(e))
                     self.__abort(SslReactorError(e))
+            except socket.timeout:
+                # See https://github.com/kcallin/haka-mqtt/issues/25
+                pass
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.
@@ -1897,6 +1900,9 @@ class Reactor(object):
             except ssl.SSLError as e:
                 self.__log.error("SSLError while writing to socket; %s.", ReprOnStr(e))
                 self.__abort(SslReactorError(e))
+            except socket.timeout:
+                # See https://github.com/kcallin/haka-mqtt/issues/25
+                pass
             except socket.error as e:
                 if e.errno == errno.EWOULDBLOCK:
                     # No write space ready.

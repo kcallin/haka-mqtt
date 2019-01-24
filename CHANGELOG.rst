@@ -22,6 +22,16 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/24
 
+#25: socket.timeout has None errno; fails assertion.
+
+     When using reactor in blocking mode with timeouts, socket.timeout
+     exceptions can be raised.  This is a subclass of socket.error
+     and caught as such.  The reactor asserts that socket.error has
+     meaningful errno so this crashes.
+
+     https://github.com/kcallin/haka-mqtt/issues/25
+
+
 
 0.3.2 (2019-01-13)
 ===================

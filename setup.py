@@ -48,7 +48,7 @@ install_requires = [
     # Syntax introduced sometime between setuptools-32.1.0 and setuptools-36.7.0
     # 'enum34>=1.1.6;python_version<"3.4"',
     # https://stackoverflow.com/questions/21082091/install-requires-based-on-python-version
-    'mqtt-codec~=1.0',
+    'mqtt-codec>=1.0.2',
 ]
 
 

@@ -19,9 +19,8 @@ Status
 
 The project's core reactor is stable.  It has been tested on systems
 with thousands of distributed nodes in difficult field conditions.  The
-QoS=0 and QoS=1 datapaths are particularly well tested.  The QoS=2
-datapath has been field tested as thoroughly as the QoS=0 and Qos=1
-datapaths.
+QoS=1 datapath is well field tested.  The QoS=0 and QoS=2 are not as
+thoroughly field tested.
 
 While the core reactor is very well tested the frontends are less
 tested.  You should pay attention to notes on the different frontends

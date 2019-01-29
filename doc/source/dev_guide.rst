@@ -2,8 +2,12 @@
 Developer Guide
 ================
 
-Building haka-mqtt
-===================
+The developer’s guide is for a person who wants to change and contribute
+changes to `haka-mqtt`. It builds on information in :doc:`user_guide`.
+
+
+Uncontrolled Builds
+====================
 
 Uncontrolled source builds are created in the standard python fashion:
 
@@ -36,16 +40,6 @@ Uncontrolled source builds are created in the standard python fashion:
 The output artifact has the word "uncontrolled" along with a build date
 so that users will know the artifact is not a release or from a
 continuous integration build server.
-
-
-Building Documentation
-=======================
-
-.. code-block:: none
-
-    $ pip install sphinxcontrib-plantuml enum34 mqtt-codec
-    $ make html
-    $
 
 
 Tests
@@ -143,6 +137,21 @@ Docstrings
 Python source code is documented according to the the numpy
 documentation standard at
 https://numpydoc.readthedocs.io/en/latest/format.html.
+
+
+Building Documentation
+=======================
+
+The documentation for ``mqtt-codec`` is created with
+`Sphinx <http://www.sphinx-doc.org/>`_ and is build the fashion usual to
+that framework:
+
+.. code-block:: bash
+
+    $ pip install sphinxcontrib-plantuml enum34 mqtt-codec
+    $ cd doc
+    $ make html
+    $
 
 
 Requirements

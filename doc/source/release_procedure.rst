@@ -269,7 +269,7 @@ a release visit the `haka-mqtt readthedocs project <https://readthedocs.org/proj
 select "Versions" click on "inactive" versions and make sure that the
 correct versions are marked as "Active".
 
-The ``mqtt-codec`` project documentation uses
+The ``haka-mqtt`` project documentation uses
 `PlantUML <https://pypi.org/project/plantuml/>`_ to draw diagrams and
 this package is not support out-of-the-box by `readthedocs`.  The
 project root directory contains a ``.readthedocs.yml`` file to set the

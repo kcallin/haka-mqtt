@@ -50,7 +50,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'aafigure.sphinxext',
     'sphinxcontrib.plantuml',
-    'sphinxcontrib.blockdiag'
+#    'sphinxcontrib.blockdiag'
 ]
 
 # plantuml = 'java -jar /path/to/plantuml.jar'

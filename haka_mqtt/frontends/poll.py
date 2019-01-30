@@ -168,7 +168,7 @@ class MqttPollClient(Reactor):
     def poll(self, period=0.):
         poll_end_time = self._clock.time() + period
 
-        while self._clock.time() < poll_end_time and self.state in ACTIVE_STATES:
+        while True:
             select_timeout = self._scheduler.remaining()
             if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
                 select_timeout = poll_end_time - self._clock.time()
@@ -178,6 +178,9 @@ class MqttPollClient(Reactor):
 
             self._selector.select(select_timeout)
             self._scheduler.poll()
+
+            if self._clock.time() > poll_end_time or self.state not in ACTIVE_STATES:
+                break
 
 
 class BlockingMqttClient(Reactor):
@@ -218,13 +221,13 @@ class BlockingMqttClient(Reactor):
     def poll(self, period=0.):
         poll_end_time = self._clock.time() + period
 
-        while self._clock.time() < poll_end_time and self.state in ACTIVE_STATES:
+        while True:
             select_timeout = self._scheduler.remaining()
             if select_timeout is None or self._clock.time() + select_timeout > poll_end_time:
                 select_timeout = poll_end_time - self._clock.time()
 
             if select_timeout <= 0.:
-                select_timeout = 0.00001
+                select_timeout = 0.001
 
             if self.socket is not None:
                 self.socket.settimeout(select_timeout)
@@ -237,3 +240,6 @@ class BlockingMqttClient(Reactor):
                 sleep(select_timeout)
 
             self._scheduler.poll()
+
+            if self._clock.time() > poll_end_time or self.state not in ACTIVE_STATES:
+                break

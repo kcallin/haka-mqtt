@@ -3,7 +3,7 @@ Change Log
 ===========
 
 
-0.3.3 (2019-01-xx)
+0.3.3 (2019-01-29)
 ===================
 
 Fix
@@ -31,6 +31,15 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/25
 
+#26: Poll frontends guarantee at least one read/write per poll call.
+
+     When MqttPollClient/MqttBlockingClient were called, they should
+     guarantee at least one read/write call per poll.  This way when
+     the poll period is set to zero the read/write call will still be
+     called (previously it might not be as clocks would timeout before
+     the read/write call was made.
+
+     https://github.com/kcallin/haka-mqtt/issues/26
 
 
 0.3.2 (2019-01-13)

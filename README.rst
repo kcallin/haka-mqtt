@@ -23,8 +23,8 @@ regarding their status and use.
 Installation
 =============
 
-The haka-mqtt package can be from `pypi.org <https://pypi.org>`_ with
-`pip <https://pip.pypa.io/en/stable/>`_:
+The haka-mqtt package can be installed from `pypi.org <https://pypi.org>`_
+with `pip <https://pip.pypa.io/en/stable/>`_:
 
 .. code-block:: bash
 

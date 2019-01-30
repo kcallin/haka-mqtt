@@ -56,7 +56,7 @@ project_dir = abspath(dirname(__file__))
 chdir(project_dir)
 setup(
     name="haka-mqtt",
-    version="0.3.3",
+    version="0.3.4",
     # Want to specify opt-in versions but found that when using
     # pip 9.0.3 (who knows what other versions), the comma seems to
     # prevent any part of the string from being recognized.

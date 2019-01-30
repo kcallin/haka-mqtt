@@ -24,9 +24,9 @@ copyright = u'2018 - 2019, Keegan Callin'
 author = u'Keegan Callin'
 
 # The short X.Y version
-version = u'0.3.2'
+version = u'0.3.3'
 # The full version, including alpha/beta/rc tags
-release = u'0.3.2'
+release = u'0.3.3'
 
 
 # -- General configuration ---------------------------------------------------

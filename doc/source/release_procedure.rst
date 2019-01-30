@@ -24,6 +24,16 @@ Verify that version and release numbers in ``doc/source/conf.py`` match
     release = u'1.0.0'
     $
 
+
+Make sure copyright dates in ``doc/source/conf.py`` are correct:
+
+.. code-block:: bash
+
+    $ grep -i copyright doc/source/conf.py
+    copyright = u'2018 - 2019, Keegan Callin'
+    $
+
+
 Verify requirements document at ``doc/source/requirements.rst`` matches
 ``setup.py`` (and not the other way around).
 

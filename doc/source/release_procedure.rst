@@ -9,7 +9,7 @@ The release procedure was created using information from these core sources:
 * `Twine <https://pypi.org/project/twine/>`_
 
 
-Test Release
+Documentation
 ===============
 
 Verify that version and release numbers in ``doc/source/conf.py`` match
@@ -23,6 +23,13 @@ Verify that version and release numbers in ``doc/source/conf.py`` match
     # The full version, including alpha/beta/rc tags
     release = u'1.0.0'
     $
+
+Verify requirements document at ``doc/source/requirements.rst`` matches
+``setup.py`` (and not the other way around).
+
+
+Test Release
+===============
 
 Clean build directory and ensure there are no old build artifacts.
 

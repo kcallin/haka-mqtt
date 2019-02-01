@@ -126,7 +126,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.subscribe_and_suback(topics)
 
         # Publish new message
-        p = MqttPublish(1, topics[0].name, b'outgoing', False, 1, False)
+        p = MqttPublish(2, topics[0].name, b'outgoing', False, 1, False)
         self.set_send_packet_side_effect(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.socket.send.assert_not_called()
@@ -141,7 +141,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         self.recv_packet_then_ewouldblock(p)
         self.socket.send.assert_not_called()
 
-        publish = MqttPublish(1, topics[0].name, b'incoming', False, 1, False)
+        publish = MqttPublish(2, topics[0].name, b'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_side_effect(puback)
         self.recv_packet_then_ewouldblock(publish)
@@ -176,7 +176,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         topics = [MqttTopic('bear_topic', 1)]
         self.subscribe_and_suback(topics)
 
-        p = MqttPublish(1, topics[0].name, b'outgoing', False, 1, False)
+        p = MqttPublish(2, topics[0].name, b'outgoing', False, 1, False)
         self.set_send_packet_side_effect(p)
         self.reactor.publish(p.topic, p.payload, p.qos)
         self.reactor.write()
@@ -186,7 +186,7 @@ class TestReactorPaths(TestReactor, unittest.TestCase):
         p = MqttPuback(p.packet_id)
         self.recv_packet_then_ewouldblock(p)
 
-        publish = MqttPublish(1, topics[0].name, b'incoming', False, 1, False)
+        publish = MqttPublish(2, topics[0].name, b'incoming', False, 1, False)
         puback = MqttPuback(p.packet_id)
         self.set_send_packet_side_effect(puback)
         self.recv_packet_then_ewouldblock(publish)
@@ -311,7 +311,7 @@ class TestSubscribePath(TestReactor, unittest.TestCase):
             MqttTopic('topic1', 1),
             MqttTopic('topic2', 2),
         ]
-        est = MqttSubscribeTicket(0, topics)
+        est = MqttSubscribeTicket(1, topics)
         subscribe_ticket = self.reactor.subscribe(topics)
         self.assertEqual(est, subscribe_ticket)
 
@@ -329,7 +329,7 @@ class TestSubscribePath(TestReactor, unittest.TestCase):
         """
         self.start_to_subscribe()
 
-        sp = MqttSuback(0, [SubscribeResult.qos1, SubscribeResult.qos2])
+        sp = MqttSuback(1, [SubscribeResult.qos1, SubscribeResult.qos2])
         self.recv_packet_then_ewouldblock(sp)
         self.assertEqual(ReactorState.started, self.reactor.state)
 
@@ -347,7 +347,7 @@ class TestSubscribePath(TestReactor, unittest.TestCase):
         """
         self.start_to_subscribe()
 
-        sp = MqttSuback(1, [SubscribeResult.qos1, SubscribeResult.qos2])
+        sp = MqttSuback(2, [SubscribeResult.qos1, SubscribeResult.qos2])
         self.recv_packet_then_ewouldblock(sp)
         self.assertEqual(ReactorState.error, self.reactor.state)
 
@@ -365,7 +365,7 @@ class TestSubscribePath(TestReactor, unittest.TestCase):
         """
         self.start_to_subscribe()
 
-        sp = MqttSuback(0, [SubscribeResult.qos1])
+        sp = MqttSuback(1, [SubscribeResult.qos1])
         self.recv_packet_then_ewouldblock(sp)
         self.assertEqual(ReactorState.error, self.reactor.state)
 
@@ -381,7 +381,7 @@ class TestUnsubscribePath(TestReactor, unittest.TestCase):
             'topic1',
             'topic2',
         ]
-        eut = MqttUnsubscribeTicket(0, topics)
+        eut = MqttUnsubscribeTicket(1, topics)
         unsubscribe_ticket = self.reactor.unsubscribe(topics)
         self.assertEqual(eut, unsubscribe_ticket)
 
@@ -391,7 +391,7 @@ class TestUnsubscribePath(TestReactor, unittest.TestCase):
         self.start_to_unsubscribe()
         self.on_unsuback.assert_not_called()
 
-        up = MqttUnsuback(0)
+        up = MqttUnsuback(1)
         self.recv_packet_then_ewouldblock(up)
         self.assertEqual(ReactorState.started, self.reactor.state)
         self.on_unsuback.assert_called_once()
@@ -402,7 +402,7 @@ class TestUnsubscribePath(TestReactor, unittest.TestCase):
         self.start_to_unsubscribe()
         self.on_unsuback.assert_not_called()
 
-        up = MqttUnsuback(1)
+        up = MqttUnsuback(2)
         self.recv_packet_then_ewouldblock(up)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.on_disconnect.assert_called_once()
@@ -423,7 +423,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.start_to_connected()
 
         # Create publish
-        ept = MqttPublishTicket(0, 'topic', b'outgoing', 0)
+        ept = MqttPublishTicket(1, 'topic', b'outgoing', 0)
         publish_ticket = self.reactor.publish(ept.topic,
                                               ept.payload,
                                               ept.qos,
@@ -439,7 +439,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
         #
-        publish = MqttPublish(0, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
+        publish = MqttPublish(1, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
         self.set_send_packet_side_effect(publish)
         self.reactor.write()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.done)
@@ -580,7 +580,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.start_to_connected()
 
         # Create publish
-        ept = MqttPublishTicket(0, 'topic', b'outgoing', 1)
+        ept = MqttPublishTicket(1, 'topic', b'outgoing', 1)
         publish_ticket = self.reactor.publish(ept.topic,
                                               ept.payload,
                                               ept.qos,
@@ -591,12 +591,12 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.send_packet_ids())
+        self.assertEqual({1}, self.reactor.send_packet_ids())
 
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
         #
-        publish = MqttPublish(0, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
+        publish = MqttPublish(1, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
         self.set_send_packet_side_effect(publish)
         self.reactor.write()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.puback)
@@ -606,7 +606,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.socket.send.reset_mock()
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.send_packet_ids())
+        self.assertEqual({1}, self.reactor.send_packet_ids())
 
         return publish_ticket
 
@@ -654,11 +654,13 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
     def test_publish_qos1_out_of_order_puback(self):
+        # TODO: Too strict.
+
         # CHECKED-KC0 (2018-09-17)
         pt0 = self.start_and_publish_qos1()
 
         # Publish a new message.
-        ept1 = MqttPublishTicket(1, 'topic1', b'outgoing1', 1)
+        ept1 = MqttPublishTicket(2, 'topic1', b'outgoing1', 1)
         pt1 = self.reactor.publish(ept1.topic,
                                    ept1.payload,
                                    ept1.qos,
@@ -668,23 +670,23 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertEqual(ept1, pt1)
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0, 1}, self.reactor.send_packet_ids())
+        self.assertEqual({1, 2}, self.reactor.send_packet_ids())
 
         # Allow reactor to put pt1 in-flight.
-        publish = MqttPublish(1, pt1.topic, pt1.payload, pt1.dupe, pt1.qos, pt1.retain)
+        publish = MqttPublish(2, pt1.topic, pt1.payload, pt1.dupe, pt1.qos, pt1.retain)
         self.set_send_packet_side_effect(publish)
 
         self.reactor.write()
 
         self.socket.send.assert_called_once_with(buffer_packet(publish))
 
-        self.assertEqual(1, pt1.packet_id)
+        self.assertEqual(2, pt1.packet_id)
         self.assertEqual(MqttPublishStatus.puback, pt1.status)
         self.socket.send.reset_mock()
         self.assertEqual(ReactorState.started, self.reactor.state)
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(2, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0, 1}, self.reactor.send_packet_ids())
+        self.assertEqual({1, 2}, self.reactor.send_packet_ids())
 
         # Send a puback for pt1 to the reactor before a puback for pt0
         # is sent.  This is a violation of [MQTT-4.6.0-2].
@@ -740,7 +742,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.assertTrue(publish_ticket.dupe)  # dupe flag set on publish ticket.
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.send_packet_ids())
+        self.assertEqual({1}, self.reactor.send_packet_ids())
 
         # Socket connects and reactor sends a MqttConnect packet.
         publish = publish_ticket.packet()
@@ -756,7 +758,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
         self.assertEqual(0, len(self.reactor.preflight_packets()))
         self.assertEqual(1, len(self.reactor.in_flight_packets()))
-        self.assertEqual({0}, self.reactor.send_packet_ids())
+        self.assertEqual({1}, self.reactor.send_packet_ids())
         self.assertTrue(publish_ticket.dupe)
         self.assertEqual(self.reactor.state, ReactorState.started)
         self.socket.send.assert_not_called()
@@ -775,8 +777,8 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def start_and_publish_qos2(self):
         self.start_to_connected()
 
-        publish = MqttPublish(0, 'topic', b'outgoing', False, 2, False)
-        pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
+        publish = MqttPublish(1, 'topic', b'outgoing', False, 2, False)
+        pub_status = MqttPublishTicket(1, publish.topic, publish.payload, publish.qos, publish.retain)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,
@@ -811,7 +813,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def test_publish_qos2_out_of_order_pubrec(self):
         self.start_and_publish_qos2()
 
-        publish = MqttPublish(1, 'topic', b'outgoing', False, 2, False)
+        publish = MqttPublish(2, 'topic', b'outgoing', False, 2, False)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,
@@ -858,8 +860,8 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def test_publish_disconnect_qos2(self):
         self.start_to_connected()
 
-        publish = MqttPublish(0, 'topic', b'incoming', False, 2, False)
-        pub_status = MqttPublishTicket(0, publish.topic, publish.payload, publish.qos, publish.retain)
+        publish = MqttPublish(1, 'topic', b'incoming', False, 2, False)
+        pub_status = MqttPublishTicket(1, publish.topic, publish.payload, publish.qos, publish.retain)
         se = socket_error(errno.ECONNABORTED)
         self.set_send_side_effect([se])
         self.assertFalse(self.reactor.want_write())
@@ -900,7 +902,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def test_pubrel_disconnect_qos2(self):
         self.start_to_connected()
 
-        publish = MqttPublish(0, 'topic', b'incoming', False, 2, False)
+        publish = MqttPublish(1, 'topic', b'incoming', False, 2, False)
         self.set_send_packet_side_effect(publish)
         actual_publish = self.reactor.publish(publish.topic,
                                        publish.payload,

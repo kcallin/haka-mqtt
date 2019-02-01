@@ -2,6 +2,20 @@
 Change Log
 ===========
 
+0.3.5 (2019-xx-xx)
+===================
+
+Fix
+----
+#27: MQTT 3.1.1, MQTT-2.3.1-1, Packet IDs must be non-zero.
+
+     Packet ID generation starts at zero and this is a violation of
+     MQTT 3.1.1 MQTT-2.3.1-1.  Packet IDs are now generated beginning
+     with one instead of zero.
+
+     https://github.com/kcallin/haka-mqtt/issues/27
+
+
 0.3.4 (2019-01-31)
 ===================
 

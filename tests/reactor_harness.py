@@ -547,7 +547,7 @@ class TestReactor(unittest.TestCase):
 
         # Push subscribe onto the wire.
         self.assertEqual(set(), self.reactor.send_packet_ids())
-        subscribe = MqttSubscribe(0, topics)
+        subscribe = MqttSubscribe(1, topics)
         subscribe_ticket = self.reactor.subscribe(subscribe.topics)
         self.assertTrue(self.reactor.want_write())
         self.socket.send.assert_not_called()

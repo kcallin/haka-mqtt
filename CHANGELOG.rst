@@ -8,7 +8,7 @@ Change Log
 New
 ----
 * BlockingMqttClient and MqttPollClient now support a SSLContext
- parameter.
+  parameter.
 
 
 Fix

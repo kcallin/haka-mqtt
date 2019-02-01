@@ -328,3 +328,23 @@ class TestRecvIdleTimeout(TestReactor, unittest.TestCase):
         self.scheduler.poll(self.reactor.recv_idle_abort_period)
         self.assertEqual(ReactorState.error, self.reactor.state)
         self.assertTrue(isinstance(self.reactor.error, RecvTimeoutReactorError))
+
+
+class TestRecvIdleAbortTimeout(TestReactor, unittest.TestCase):
+    def reactor_properties(self):
+        self.recv_idle_ping_period = 10
+        self.recv_idle_abort_period = 17
+        self.keepalive_period = 15  # Disable send path keepalive
+        return TestReactor.reactor_properties(self)
+
+    def test_recv_idle_abort_with_keepalive_deadline_active(self):
+        self.start_to_connack()
+
+        publish_period = 5
+        self.poll(publish_period)
+        p = MqttPublish(0, 'topic', b'payload', False, 0, False)
+        self.reactor.publish(p.topic, p.payload, p.qos, p.retain)
+        self.send_packet(p)
+        self.poll(self.recv_idle_abort_period - publish_period)
+        self.assertEqual(ReactorState.error, self.reactor.state)
+

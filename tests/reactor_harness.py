@@ -147,6 +147,7 @@ class ClockDurationScheduler(DurationScheduler):
         ----------
         duration: int
         """
+        assert duration >= 0, duration
         self.__clock.add_time(duration)
         DurationScheduler.poll(self, duration)
 
@@ -574,6 +575,9 @@ class TestReactor(unittest.TestCase):
     def poll(self, period):
         while period > 0:
             poll_period = self.scheduler.remaining()
+            if poll_period is None:
+                poll_period = period
+
             if poll_period > period:
                 poll_period = period
             self.scheduler.poll(poll_period)

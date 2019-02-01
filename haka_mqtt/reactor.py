@@ -798,6 +798,11 @@ class Reactor(object):
         if self.state is ReactorState.error:
             assert self.error is not None
 
+        if self.state in INACTIVE_STATES:
+            assert self.__recv_idle_abort_deadline is None
+            assert self.__keepalive_due_deadline is None
+            assert self.__recv_idle_ping_deadline is None
+
     def send_packet_ids(self):
         """
 
@@ -2101,10 +2106,9 @@ class Reactor(object):
 
     def __recv_idle_abort_timeout(self):
         """Called when bytes have not been received from the server for
-        at least ``self.recv_idle_ping_period`` seconds."""
+        at least ``self.recv_idle_abort_period`` seconds."""
         self.__assert_state_rules()
 
-        assert self.__keepalive_due_deadline is None
         assert self.__recv_idle_abort_deadline is not None
 
         if self.sock_state in (SocketState.handshake, SocketState.connected, SocketState.mute, SocketState.deaf):

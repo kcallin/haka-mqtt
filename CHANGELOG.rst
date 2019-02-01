@@ -2,6 +2,20 @@
 Change Log
 ===========
 
+0.3.4 (2019-01-31)
+===================
+
+Fix
+----
+#28: Assertion failure in __recv_idle_abort_timeout handler.
+
+     If an recv_idle_abort_timeout occurs while the keepalive_timeout
+     is active then an assertion fails resulting in a library crash.
+     The assertion was incorrectly placed and has been removed.  Bug
+     has existed since 0.3.0.
+
+     https://github.com/kcallin/haka-mqtt/issues/28
+
 
 0.3.3 (2019-01-29)
 ===================

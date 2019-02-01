@@ -5,6 +5,12 @@ Change Log
 0.3.4 (2019-01-31)
 ===================
 
+New
+----
+* BlockingMqttClient and MqttPollClient now support a SSLContext
+ parameter.
+
+
 Fix
 ----
 #28: Assertion failure in __recv_idle_abort_timeout handler.

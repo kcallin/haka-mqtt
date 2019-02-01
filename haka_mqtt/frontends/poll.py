@@ -113,9 +113,13 @@ class MqttPollClientProperties(object):
         0 < recv_idle_abort_period; aborts connection after this time
         without receiving any bytes from remote (typically set to 1.5x
         ``self.recv_idle_ping_period``).
-    ssl: bool
+    ssl: bool or SSLContext
         When `True` connects to server using a default SSL socket
         context created with :func:`ssl.create_default_context`.
+
+        If ``ssl`` has a callable ``wrap_socket`` method then it is
+        assumed that ``ssl`` is a SSLContext to be used for securing
+        sockets.
     """
     def __init__(self):
         self.host = None
@@ -144,7 +148,9 @@ class MqttPollClient(Reactor):
         endpoint = (properties.host, properties.port)
 
         p = ReactorProperties()
-        if properties.ssl:
+        if hasattr(properties.ssl, 'wrap_socket') and callable(properties.ssl.wrap_socket):
+            p.socket_factory = SslSocketFactory(properties.ssl)
+        elif properties.ssl:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             p.socket_factory = SslSocketFactory(ssl_context)
         else:
@@ -200,7 +206,9 @@ class BlockingMqttClient(Reactor):
         endpoint = (properties.host, properties.port)
 
         p = ReactorProperties()
-        if properties.ssl:
+        if hasattr(properties.ssl, 'wrap_socket') and callable(properties.ssl.wrap_socket):
+            p.socket_factory = SslSocketFactory(properties.ssl)
+        elif properties.ssl:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             p.socket_factory = BlockingSslSocketFactory(ssl_context)
         else:

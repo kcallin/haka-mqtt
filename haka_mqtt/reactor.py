@@ -1080,22 +1080,31 @@ class Reactor(object):
 
         if family == socket.AF_INET:
             ip, port = sockaddr
-            self.__log.info("Found family=inet sock=%s proto=%s addr=%s:%d%s",
-                            socktype_str,
-                            proto_str,
-                            ip,
-                            port,
-                            chosen_postfix)
+            msg = "Found family=inet sock=%s proto=%s addr=%s:%d%s"
+            args = (
+                socktype_str,
+                proto_str,
+                ip,
+                port,
+                chosen_postfix
+            )
         elif family == socket.AF_INET6:
             ip6, port, flow_info, scope_id = sockaddr
-            self.__log.info("Found family=inet6 sock=%s proto=%s addr=[%s]:%d%s",
-                            socktype_str,
-                            proto_str,
-                            ip6,
-                            port,
-                            chosen_postfix)
+            msg = "Found family=inet6 sock=%s proto=%s addr=[%s]:%d%s"
+            args = (
+                socktype_str,
+                proto_str,
+                ip6,
+                port,
+                chosen_postfix
+            )
         else:
             raise NotImplementedError(family)
+
+        if chosen:
+            self.__log.info(msg, *args)
+        else:
+            self.__log.debug(msg, *args)
 
     def __connect(self, resolution):
         """Connect to the given resolved address.

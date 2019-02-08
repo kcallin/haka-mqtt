@@ -23,6 +23,15 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/30
 
+#31: Log chosen DNS entry at INFO; others at DEBUG.
+
+     On DNS lookup one entry is chosen as the endpoint and other
+     entries are logged for information purposes.  This leads to noisy
+     logs.  Chosen entry now logged at INFO and others are logged at
+     DEBUG level.
+
+     https://github.com/kcallin/haka-mqtt/issues/31
+
 #32: DNS lookup of IP6 addresses logs address in square brackets.
 
      When logging IP6 addresses from DNS lookups the addresses should
@@ -33,6 +42,7 @@ Fix
      After: [2001:db8:85a3:8d3:1319:8a2e:370:7348]:443
 
      https://github.com/kcallin/haka-mqtt/issues/32
+
 
 
 0.3.4 (2019-01-31)

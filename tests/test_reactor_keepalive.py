@@ -93,7 +93,7 @@ class TestKeepalive(TestReactor, unittest.TestCase):
         # the keepalive timer.
         time_until_publish = self.keepalive_period//2 + 1
         self.poll(time_until_publish)
-        pub0 = MqttPublish(18511, u'/test/MT2007/konyha', b'', dupe=False, qos=0, retain=False)
+        pub0 = MqttPublish(0, u'/test/MT2007/konyha', b'', dupe=False, qos=0, retain=False)
         self.recv_packet_then_ewouldblock(pub0)
 
         # Expire the keepalive timer; verify pingreq is sent.

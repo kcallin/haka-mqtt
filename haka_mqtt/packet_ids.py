@@ -4,11 +4,17 @@ from haka_mqtt.exception import PacketIdReactorException
 
 class PacketIdGenerator(object):
     def __init__(self, ids=[]):
-        self.__packet_id_iter = IntegralCycleIter(1, self.max_id())
+        self.__packet_id_iter = IntegralCycleIter(1, self.id_stop())
         self.__consumed_ids = set(ids)
 
     @staticmethod
-    def max_id():
+    def id_stop():
+        """Returns one greater than maximum packet id (2**16).
+
+        Returns
+        -------
+        int
+        """
         return 2**16
 
     def __len__(self):
@@ -36,7 +42,7 @@ class PacketIdGenerator(object):
         int
             A `packet_id` such that 0 <= `packet_id` <= 2**16-1.
         """
-        for i in xrange(1, 2**16):
+        for i in xrange(1, self.id_stop()):
             n = next(self.__packet_id_iter)
             if n not in self.__consumed_ids:
                 self.__consumed_ids.add(n)

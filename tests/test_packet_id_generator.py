@@ -31,7 +31,7 @@ class TestPacketIdGenerator(unittest.TestCase):
 
     def test_exhaustion(self):
         gen = PacketIdGenerator()
-        expected_ids = list(range(1, 2**16))
+        expected_ids = list(range(1, PacketIdGenerator.id_stop()))
         for i in expected_ids:
             self.assertEqual(i, gen.acquire())
             self.assertEqual(i, len(gen))

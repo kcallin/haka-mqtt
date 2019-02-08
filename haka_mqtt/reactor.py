@@ -949,7 +949,14 @@ class Reactor(object):
         assert 0 <= qos <= 2
         assert isinstance(payload, bytes)
 
-        req = MqttPublishTicket(self.__send_path_packet_ids.acquire(), topic, payload, qos, retain)
+        if qos is 0:
+            packet_id = 0
+        elif qos is 1 or 2:
+            packet_id = self.__send_path_packet_ids.acquire()
+        else:
+            raise NotImplementedError(qos)
+
+        req = MqttPublishTicket(packet_id, topic, payload, qos, retain)
         self.__preflight_queue.append(req)
         self.__assert_state_rules()
         self.__update_io_notification()
@@ -1739,7 +1746,6 @@ class Reactor(object):
             #     pass
             if packet_record.packet_type is MqttControlPacketType.publish:
                 if packet_record.qos == 0:
-                    self.__send_path_packet_ids.release(packet_record.packet_id)
                     packet_record._set_status(MqttPublishStatus.done)
                 elif packet_record.qos == 1:
                     packet_record._set_status(MqttPublishStatus.puback)

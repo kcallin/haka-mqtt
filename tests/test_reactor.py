@@ -217,13 +217,13 @@ class TestPacketsBeforeConnack(TestReactor, unittest.TestCase):
         TestReactor.tearDown(self)
 
     def test_suback(self):
-        self.recv_packet_then_ewouldblock(MqttSuback(0, [SubscribeResult.qos0]))
+        self.recv_packet_then_ewouldblock(MqttSuback(1, [SubscribeResult.qos0]))
 
     def test_unsuback(self):
-        self.recv_packet_then_ewouldblock(MqttUnsuback(0))
+        self.recv_packet_then_ewouldblock(MqttUnsuback(1))
 
     def test_puback(self):
-        self.recv_packet_then_ewouldblock(MqttPuback(0))
+        self.recv_packet_then_ewouldblock(MqttPuback(1))
 
     def test_publish(self):
         self.recv_packet_then_ewouldblock(MqttPublish(0, 'topic_str', b'payload_bytes', False, 0, False))
@@ -232,13 +232,13 @@ class TestPacketsBeforeConnack(TestReactor, unittest.TestCase):
         self.recv_packet_then_ewouldblock(MqttPingresp())
 
     def test_pubrel(self):
-        self.recv_packet_then_ewouldblock(MqttPubrel(0))
+        self.recv_packet_then_ewouldblock(MqttPubrel(1))
 
     def test_pubcomp(self):
-        self.recv_packet_then_ewouldblock(MqttPubcomp(0))
+        self.recv_packet_then_ewouldblock(MqttPubcomp(1))
 
     def test_pubrec(self):
-        self.recv_packet_then_ewouldblock(MqttPubrec(0))
+        self.recv_packet_then_ewouldblock(MqttPubrec(1))
 
 
 class TestPacketsBeforeConnackWhileMute(TestReactor, unittest.TestCase):
@@ -256,13 +256,13 @@ class TestPacketsBeforeConnackWhileMute(TestReactor, unittest.TestCase):
         TestReactor.tearDown(self)
 
     def test_suback(self):
-        self.recv_packet_then_ewouldblock(MqttSuback(0, [SubscribeResult.qos0]))
+        self.recv_packet_then_ewouldblock(MqttSuback(1, [SubscribeResult.qos0]))
 
     def test_unsuback(self):
-        self.recv_packet_then_ewouldblock(MqttUnsuback(0))
+        self.recv_packet_then_ewouldblock(MqttUnsuback(1))
 
     def test_puback(self):
-        self.recv_packet_then_ewouldblock(MqttPuback(0))
+        self.recv_packet_then_ewouldblock(MqttPuback(1))
 
     def test_publish(self):
         self.recv_packet_then_ewouldblock(MqttPublish(0, 'topic_str', b'payload_bytes', False, 0, False))
@@ -271,13 +271,13 @@ class TestPacketsBeforeConnackWhileMute(TestReactor, unittest.TestCase):
         self.recv_packet_then_ewouldblock(MqttPingresp())
 
     def test_pubrel(self):
-        self.recv_packet_then_ewouldblock(MqttPubrel(0))
+        self.recv_packet_then_ewouldblock(MqttPubrel(1))
 
     def test_pubcomp(self):
-        self.recv_packet_then_ewouldblock(MqttPubcomp(0))
+        self.recv_packet_then_ewouldblock(MqttPubcomp(1))
 
     def test_pubrec(self):
-        self.recv_packet_then_ewouldblock(MqttPubrec(0))
+        self.recv_packet_then_ewouldblock(MqttPubrec(1))
 
 
 class TestConnackFail(TestReactor, unittest.TestCase):
@@ -423,7 +423,7 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.start_to_connected()
 
         # Create publish
-        ept = MqttPublishTicket(1, 'topic', b'outgoing', 0)
+        ept = MqttPublishTicket(0, 'topic', b'outgoing', 0)
         publish_ticket = self.reactor.publish(ept.topic,
                                               ept.payload,
                                               ept.qos,
@@ -432,14 +432,14 @@ class TestSendPathQos0(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.assertEqual(1, len(self.reactor.preflight_packets()))
         self.assertEqual(0, len(self.reactor.in_flight_packets()))
-        self.assertEqual(1, len(self.reactor.send_packet_ids()))
+        self.assertEqual(0, len(self.reactor.send_packet_ids()))
         self.socket.send.assert_not_called()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.preflight)
 
         # Write is called; reactor attempts to push packet to socket
         # send buffer.
         #
-        publish = MqttPublish(1, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
+        publish = MqttPublish(0, ept.topic, ept.payload, ept.dupe, ept.qos, ept.retain)
         self.set_send_packet_side_effect(publish)
         self.reactor.write()
         self.assertEqual(publish_ticket.status, MqttPublishStatus.done)
@@ -654,8 +654,6 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
         self.reactor.terminate()
 
     def test_publish_qos1_out_of_order_puback(self):
-        # TODO: Too strict.
-
         # CHECKED-KC0 (2018-09-17)
         pt0 = self.start_and_publish_qos1()
 
@@ -714,7 +712,7 @@ class TestSendPathQos1(TestReactor, unittest.TestCase):
 
         self.start_to_connected()
 
-        puback = MqttPuback(0)
+        puback = MqttPuback(1)
         self.recv_packet_then_ewouldblock(puback)
         self.on_puback.assert_not_called()
         self.assertEqual(self.reactor.state, ReactorState.error)
@@ -832,7 +830,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def test_pubcomp_not_in_flightpublish_qos2_out_of_order_pubcomp(self):
         self.start_to_connected()
 
-        pubcomp = MqttPubcomp(0)
+        pubcomp = MqttPubcomp(1)
         self.recv_packet_then_ewouldblock(pubcomp)
         self.on_pubcomp.assert_not_called()
         self.socket.send.assert_not_called()
@@ -841,7 +839,7 @@ class TestSendPathQos2(TestReactor, unittest.TestCase):
     def test_pubrec_not_in_flight_packet_id(self):
         self.start_to_connected()
 
-        pubrec = MqttPubrec(0)
+        pubrec = MqttPubrec(1)
         self.recv_packet_then_ewouldblock(pubrec)
         self.on_pubrec.assert_not_called()
         self.socket.send.assert_not_called()
@@ -949,7 +947,7 @@ class TestReceivePathQos0(TestReactor, unittest.TestCase):
         self.subscribe_and_suback(topics)
 
         # Receive QoS=0 publish
-        publish = MqttPublish(1, topics[0].name, b'incoming', False, topics[0].max_qos, False)
+        publish = MqttPublish(0, topics[0].name, b'incoming', False, topics[0].max_qos, False)
         self.set_send_side_effect([len(buffer_packet(publish))])
         self.recv_packet_then_ewouldblock(publish)
         self.on_publish.assert_called_once()

@@ -15,6 +15,14 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/27
 
+#30: BlockingMqttClient must use BlockingSslSocketFactory for ssl.
+
+     When uses incorrect socket factory when properties.ssl is an
+     SSLContext BlockingMqttClient incorrectly uses a SslSocketFactory
+     instead of a BlockingSslSocketFactory.
+
+     https://github.com/kcallin/haka-mqtt/issues/30
+
 
 0.3.4 (2019-01-31)
 ===================

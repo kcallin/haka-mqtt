@@ -207,7 +207,7 @@ class BlockingMqttClient(Reactor):
 
         p = ReactorProperties()
         if hasattr(properties.ssl, 'wrap_socket') and callable(properties.ssl.wrap_socket):
-            p.socket_factory = SslSocketFactory(properties.ssl)
+            p.socket_factory = BlockingSslSocketFactory(properties.ssl)
         elif properties.ssl:
             ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             p.socket_factory = BlockingSslSocketFactory(ssl_context)

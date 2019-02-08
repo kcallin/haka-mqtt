@@ -23,6 +23,17 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/30
 
+#32: DNS lookup of IP6 addresses logs address in square brackets.
+
+     When logging IP6 addresses from DNS lookups the addresses should
+     be enclosed by square brackets "[]" to distinguish them from port
+     numbers.
+
+     Before: 2001:db8:85a3:8d3:1319:8a2e:370:7348:443
+     After: [2001:db8:85a3:8d3:1319:8a2e:370:7348]:443
+
+     https://github.com/kcallin/haka-mqtt/issues/32
+
 
 0.3.4 (2019-01-31)
 ===================

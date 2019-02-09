@@ -2,7 +2,7 @@ import sys
 from glob import glob
 from os import chdir
 from os.path import join, dirname, abspath
-from setuptools import setup, find_packages
+from setuptools import setup
 
 
 def read_path(filename):
@@ -43,7 +43,6 @@ def read_path(filename):
 # )
 
 
-py_version = (sys.version_info.major, sys.version_info.minor)
 install_requires = [
     # Syntax introduced sometime between setuptools-32.1.0 and setuptools-36.7.0
     # 'enum34>=1.1.6;python_version<"3.4"',

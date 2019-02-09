@@ -43,6 +43,15 @@ Fix
 
      https://github.com/kcallin/haka-mqtt/issues/32
 
+#34: MqttPingreq not always scheduled correctly.
+
+     Client is not permitted to have more than one unacknowledged
+     pingreq at any given time. When a keepalive pingreq comes due and
+     the acknowledging pingresp is delayed (by say more than keepalive
+     period) the reactor needs to be able to immediately launch a
+     pingreq upon receipt of the pingresp.
+
+     https://github.com/kcallin/haka-mqtt/issues/34
 
 
 0.3.4 (2019-01-31)

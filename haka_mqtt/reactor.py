@@ -516,6 +516,7 @@ class Reactor(object):
 
         self.__name_resolution_future = None
         self.__pingreq_active = False
+        self.__pingreq_due = False
 
         # Want read
         self.__selector = _AssertSelectAdapter(self, properties.selector)
@@ -1388,7 +1389,7 @@ class Reactor(object):
         else:
             if self.state is ReactorState.starting:
                 self.__state = ReactorState.started
-                if self.keepalive_period and self.__keepalive_due_deadline is None:
+                if self.keepalive_period and self.__pingreq_due:
                     # The keepalive period timed out while waiting for
                     # connack.  Pingreq requests are not launched while
                     # waiting for connack; it has been deferred.
@@ -1674,6 +1675,9 @@ class Reactor(object):
                 self.__pingreq_active = False
             else:
                 self.__log.warning('Received unsolicited %s.', repr(pingresp))
+
+            if self.__pingreq_due:
+                self.__launch_pingreq_if_inactive()
         else:
             raise NotImplementedError(self.mqtt_state)
 
@@ -1941,10 +1945,7 @@ class Reactor(object):
                     self.__keepalive_due_deadline.cancel()
                     self.__keepalive_due_deadline = None
 
-                if self.keepalive_period and not self.__pingreq_active:
-                    # Only schedule a keepalive deadline if one is not
-                    # already active.
-                    #
+                if self.keepalive_period:
                     self.__keepalive_due_deadline = self.__scheduler.add(self.keepalive_period, self.__keepalive_due_timeout)
 
         return num_bytes_written
@@ -2084,6 +2085,7 @@ class Reactor(object):
 
         if not self.__pingreq_active:
             self.__pingreq_active = True
+            self.__pingreq_due = False
             self.__preflight_queue.append(MqttPingreq())
             rv = True
         else:
@@ -2098,11 +2100,12 @@ class Reactor(object):
 
         assert self.sock_state is SocketState.connected
 
-        if self.mqtt_state is MqttState.connected:
-            self.__launch_pingreq_if_inactive()
-
         self.__keepalive_due_deadline.cancel()
         self.__keepalive_due_deadline = None
+        self.__pingreq_due = True
+
+        if self.mqtt_state is MqttState.connected:
+            self.__launch_pingreq_if_inactive()
 
         self.__update_io_notification()
         self.__assert_state_rules()

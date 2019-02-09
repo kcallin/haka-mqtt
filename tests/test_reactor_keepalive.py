@@ -57,31 +57,98 @@ class TestKeepalive(TestReactor, unittest.TestCase):
         self.assertTrue(self.reactor.want_write())
         self.send_packet(MqttPingreq())
 
-        # Next deadline is idle abort.
-        self.assertEqual(self.recv_idle_ping_period, self.scheduler.remaining())
-        self.scheduler.poll(self.scheduler.remaining())
-
-        # A pingresp is an error at this point.
-        self.reactor.terminate()
+        # Wait for idle abort.
+        self.scheduler.poll(self.recv_idle_abort_period - min_time_step)
+        self.assertFalse(self.reactor.want_write())  # Verify no ping packets written.
+        self.scheduler.poll(min_time_step)
+        self.assertEqual(self.reactor.state, ReactorState.error)
+        self.assertEqual(self.reactor.error, RecvTimeoutReactorError())
 
     def test_connected(self):
         self.start_to_connected()
 
-        # Send pingreq
+        # 1st pingreq due
         self.scheduler.poll(self.reactor.keepalive_period)
         self.assertEqual(ReactorState.started, self.reactor.state)
         self.send_packet(MqttPingreq())
 
-        # Feed pingresp
         self.recv_packet_then_ewouldblock(MqttPingresp())
         self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
 
-        # There have been `2 x keepalive_periods` that have passed in
-        # the test.  Since `keepalive_timeout_period = 1.5 x keepalive_period`
-        # then a keepalive error would have resulted if the pingresp
-        # were not processed accurately.
+        # 2nd pingreq due
         self.scheduler.poll(self.reactor.keepalive_period)
         self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
+
+        # 3rd pingreq due
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
+
+        self.reactor.terminate()
+
+    def test_deferred_pingreq_launch(self):
+        self.start_to_connected()
+
+        # 1st pingreq due
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.send_packet(MqttPingreq())
+
+        # pingresp is delayed; new pingreq should immediately be
+        # launched when pingresp is received.
+        self.scheduler.poll(self.reactor.keepalive_period + 1)
+        self.assertFalse(self.reactor.want_write())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        # pingresp is delayed again; new pingreq should immediately be
+        # launched when pingresp is received.
+        self.scheduler.poll(self.reactor.keepalive_period + 1)
+        self.assertFalse(self.reactor.want_write())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        # Immediately received pingresp; back to normal operation after
+        # 2x deferred pings.
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertFalse(self.reactor.want_write())
+
+        # Keepalive due; pingresp is not delayed this time.
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
+
+        # Keepalive due; pingresp is not delayed this time.
+        self.scheduler.poll(self.reactor.keepalive_period)
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertTrue(self.reactor.want_write())
+        self.send_packet(MqttPingreq())
+
+        self.recv_packet_then_ewouldblock(MqttPingresp())
+        self.assertEqual(ReactorState.started, self.reactor.state)
+        self.assertFalse(self.reactor.want_write())
 
         self.reactor.terminate()
 

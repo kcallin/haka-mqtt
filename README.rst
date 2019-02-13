@@ -19,6 +19,10 @@ While the core reactor is very well tested the frontends are less
 tested.  You should pay attention to notes on the different frontends
 regarding their status and use.
 
+The haka library is mostly tested on Linux derivatives.  It may work on
+other platforms but this has not been tested by the authors and no
+definite reports of success have been reported to the authors.
+
 
 Installation
 =============

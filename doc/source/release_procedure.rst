@@ -138,7 +138,7 @@ GPG signatures are created for test release artifacts.
 .. https://packaging.python.org/guides/making-a-pypi-friendly-readme/#validating-restructuredtext-markup
    (Retrieved 2018-11-28)
 
-Ensure that twine version 1.12.0 or high is installed:
+Ensure that twine version 1.12.0 or higher is installed:
 
 .. code-block:: none
 

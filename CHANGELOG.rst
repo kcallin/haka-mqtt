@@ -2,8 +2,27 @@
 Change Log
 ===========
 
-0.3.5 (2019-xx-xx)
+0.3.5 (2019-02-12)
 ===================
+
+New
+----
+#35: Added is_active method to core reactor.
+
+     Determining whether a reactor had oustanding socket I/O, scheduler
+     deadlines or futures was:
+
+     if reactor.state in ACTIVE_STATES:
+        pass  # Do stuff
+
+     but this is less obvious than:
+
+     if reactor.is_active():
+        pass  # Do stuff
+
+     The change should be helpful particularly to new users of the library.
+
+     https://github.com/kcallin/haka-mqtt/issues/35
 
 Fix
 ----

@@ -29,5 +29,5 @@ sub_ticket = c.subscribe([MqttTopic(TOPIC, 1)])
 c.on_suback = lambda c, suback: c.publish(TOPIC, 'payload', 1)
 c.on_publish = lambda c, publish: c.stop()
 
-while c.state in ACTIVE_STATES:
+while c.is_active():
     c.poll(5.)

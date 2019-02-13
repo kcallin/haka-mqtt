@@ -804,6 +804,34 @@ class Reactor(object):
             assert self.__keepalive_due_deadline is None
             assert self.__recv_idle_ping_deadline is None
 
+    def is_active(self):
+        """``True`` when reactor is active; ``False`` otherwise.
+
+        An "active" reactor implies that there are outstanding scheduler
+        deadlines active, possibly open sockets, or possibly outstanding
+        DNS lookup futures.  This method would return ``True`` for this
+        case.
+
+        An inactive reactor guarantees that there are no oustanding
+        scheduler deadlines, DNS lookups, or open sockets.  An inactive
+        reactor will never change state unless a method like
+        :meth:`start` is called to start the reactor.
+
+        .. versionadded:: 0.3.5
+
+        Returns
+        -------
+        bool
+        """
+        if self.state in ACTIVE_STATES:
+            rv = True
+        elif self.state in INACTIVE_STATES:
+            rv = False
+        else:
+            raise NotImplementedError(self.state)
+
+        return rv
+
     def send_packet_ids(self):
         """
 
